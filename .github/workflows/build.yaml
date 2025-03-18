@@ -45,4 +45,4 @@ jobs:
             targets/${{ matrix.builds.codename }}/image.pkr.hcl
 
           qemu-img convert -O qcow2 -c outputs/${{ matrix.builds.codename }}/packer-${{ matrix.builds.codename }} ${{ matrix.builds.codename }}.qcow2
-          bash .github/scripts/upload-file.sh "${{ matrix.builds.codename }}.qcow2" "/Local/VirtualMachineImages"
+          bash .github/scripts/upload-alist.sh "${{ matrix.builds.codename }}.qcow2" "/Local/VirtualMachineImages"
