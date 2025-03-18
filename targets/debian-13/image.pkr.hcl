@@ -22,11 +22,6 @@ variable "disk_size" {
   default = "4096"
 }
 
-variable "numvcpus" {
-  type    = string
-  default = "1"
-}
-
 variable "headless" {
   type    = bool
   default = false
@@ -42,11 +37,11 @@ variable "efi_firmware_vars" {
   default = "/usr/share/OVMF/OVMF_VARS_4M.fd"
 }
 
-source "qemu" "debian-12" {
-  iso_checksum      = "file:https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/SHA256SUMS"
-  iso_url           = "https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/debian-12.10.0-amd64-netinst.iso"
+source "qemu" "debian-13" {
+  iso_checksum      = "file:https://cdimage.debian.org/cdimage/weekly-builds/amd64/iso-cd/SHA256SUMS"
+  iso_url           = "https://cdimage.debian.org/cdimage/weekly-builds/amd64/iso-cd/debian-testing-amd64-netinst.iso"
 
-  output_directory  = "outputs/debian12"
+  output_directory  = "outputs/debian13"
   accelerator       = "kvm"
 
   cpus              = 4
@@ -72,7 +67,7 @@ source "qemu" "debian-12" {
 }
 
 build {
-  sources = ["source.qemu.debian-12"]
+  sources = ["source.qemu.debian-13"]
 
   provisioner "shell" {
     scripts = [

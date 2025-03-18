@@ -5,12 +5,15 @@ set -ex
 apt-get autoremove --purge -y
 apt-get clean -y
 
-find \
-  /var/cache/apt \
+
+for path in /var/cache/apt \
   /var/lib/apt \
   /var/lib/dhcp \
-  /var/log \
-  -mindepth 1 -print -delete
+  /var/log; do
+  if [ -d $path ]; then
+    find $path -mindepth 1 -print -delete
+  fi
+done
 
 rm -vf \
   /etc/adjtime \
