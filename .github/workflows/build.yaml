@@ -30,7 +30,7 @@ jobs:
       - name: Install deps
         run: |
           sudo apt-get update -y
-          sudo apt-get install qemu-utils -y
+          sudo apt-get install qemu-utils qemu-kvm -y
 
       - name: Build
         env:
@@ -39,5 +39,9 @@ jobs:
           ALIST_PASSWORD: ${{ secrets.ALIST_PASSWORD }}
         run: |
           packer init targets/${{ matrix.builds.codename }}/image.pkr.hcl
-          sudo packer build targets/${{ matrix.builds.codename }}/image.pkr.hcl
+
+          sudo packer build \
+            -var-file overrides/headless.pkr.hcl \
+            targets/${{ matrix.builds.codename }}/image.pkr.hcl
+
           qemu-img convert -O qcow2 -c outputs/${{ matrix.builds.codename }}/packer-${{ matrix.builds.codename }} ${{ matrix.builds.codename }}.qcow2
