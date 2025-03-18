@@ -1,0 +1,43 @@
+name: Build images
+
+on:
+  push:
+
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      # Dont cancel entire job if one failed
+      fail-fast: false
+      matrix:
+        builds:
+          - name: Debian 12
+            codename: debian-12
+          - name: Debian 13
+            codename: debian-13
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup `packer`
+        uses: hashicorp/setup-packer@main
+        id: setup
+        with:
+          version: latest
+
+      - name: Install deps
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install qemu-utils -y
+
+      - name: Build
+        env:
+          ALIST_UPLOAD_DOMAIN: ${{ secrets.ALIST_UPLOAD_URL }}
+          ALIST_USERNAME: ${{ secrets.ALIST_USERNAME }}
+          ALIST_PASSWORD: ${{ secrets.ALIST_PASSWORD }}
+        run: |
+          packer init targets/${{ matrix.builds.codename }}/image.pkr.hcl
+          sudo packer build targets/${{ matrix.builds.codename }}/image.pkr.hcl
+          qemu-img convert -O qcow2 -c outputs/${{ matrix.builds.codename }}/packer-${{ matrix.builds.codename }} ${{ matrix.builds.codename }}.qcow2

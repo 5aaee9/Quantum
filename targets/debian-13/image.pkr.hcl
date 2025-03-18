@@ -41,7 +41,7 @@ source "qemu" "debian-13" {
   iso_checksum      = "file:https://cdimage.debian.org/cdimage/weekly-builds/amd64/iso-cd/SHA256SUMS"
   iso_url           = "https://cdimage.debian.org/cdimage/weekly-builds/amd64/iso-cd/debian-testing-amd64-netinst.iso"
 
-  output_directory  = "outputs/debian13"
+  output_directory  = "outputs/debian-13"
   accelerator       = "kvm"
 
   cpus              = 4
