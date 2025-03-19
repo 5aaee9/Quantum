@@ -76,6 +76,7 @@ build {
       "./scripts/10-setup-cloud-init.sh",
       "./scripts/20-setup-zsh.sh",
       "./scripts/20-setup-fail2ban.sh",
+      "./scripts/30-system-sysctl.sh",
       "./scripts/98-clean-interfaces.sh",
       "./scripts/98-clear-apt-cache.sh",
       "./scripts/99-release-disk-space.sh"
