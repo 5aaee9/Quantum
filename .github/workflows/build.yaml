@@ -21,11 +21,12 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup `packer`
+      - name: Setup packer
         uses: hashicorp/setup-packer@main
-        id: setup
         with:
           version: latest
+
+      - uses: extractions/setup-just@v2
 
       - name: Install deps
         run: |
@@ -38,11 +39,5 @@ jobs:
           ALIST_USERNAME: ${{ secrets.ALIST_USERNAME }}
           ALIST_PASSWORD: ${{ secrets.ALIST_PASSWORD }}
         run: |
-          packer init targets/${{ matrix.builds.codename }}/image.pkr.hcl
-
-          sudo packer build \
-            -var-file overrides/headless.pkr.hcl \
-            targets/${{ matrix.builds.codename }}/image.pkr.hcl
-
-          qemu-img convert -O qcow2 -c outputs/${{ matrix.builds.codename }}/packer-${{ matrix.builds.codename }} ${{ matrix.builds.codename }}.qcow2
+          just build "${{ matrix.builds.codename }}"
           bash .github/scripts/upload-alist.sh "${{ matrix.builds.codename }}.qcow2" "/Local/VirtualMachineImages"
