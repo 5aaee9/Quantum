@@ -2,6 +2,8 @@ name: Build images
 
 on:
   push:
+  schedule:
+  - @weekly
 
 concurrency:
   group: "${{ github.workflow }}-${{ github.ref }}"
