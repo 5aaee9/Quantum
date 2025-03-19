@@ -41,6 +41,7 @@ jobs:
           ALIST_UPLOAD_DOMAIN: ${{ secrets.ALIST_UPLOAD_URL }}
           ALIST_USERNAME: ${{ secrets.ALIST_USERNAME }}
           ALIST_PASSWORD: ${{ secrets.ALIST_PASSWORD }}
+          JUST_UNSTABLE: true
         run: |
           just build "${{ matrix.builds.codename }}"
           bash .github/scripts/upload-alist.sh "${{ matrix.builds.codename }}.qcow2" "/Local/VirtualMachineImages"
