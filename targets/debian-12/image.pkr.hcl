@@ -77,6 +77,7 @@ build {
   provisioner "shell" {
     scripts = [
       "./scripts/00-update-apt.sh",
+      "./scripts/10-setup-legacy-bios-support.sh",
       "./scripts/10-setup-apt-packages.sh",
       "./scripts/10-setup-cloud-init.sh",
       "./scripts/20-setup-zsh.sh",

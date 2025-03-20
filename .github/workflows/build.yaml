@@ -1,9 +1,9 @@
 name: Build images
 
 on:
-  push:
   schedule:
-  - @weekly
+  - cron: '0 14 * * 1'
+  push:
 
 concurrency:
   group: "${{ github.workflow }}-${{ github.ref }}"
