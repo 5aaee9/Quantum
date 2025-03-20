@@ -25,3 +25,5 @@ rm -vf \
   ~/.bash_history
 
 truncate -s 0 /etc/machine-id
+
+rm -f /root/.wget-hsts
