@@ -11,6 +11,7 @@ concurrency:
 
 jobs:
   build:
+    name: Build ${{ matrix.builds.name }}
     runs-on: ubuntu-latest
     strategy:
       # Dont cancel entire job if one failed
@@ -21,6 +22,8 @@ jobs:
             codename: debian-12
           - name: Debian 13
             codename: debian-13
+          - name: Alma Linux 9
+            codename: almalinux-9
     steps:
       - uses: actions/checkout@v4
         with:

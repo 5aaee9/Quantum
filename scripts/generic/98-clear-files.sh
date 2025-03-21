@@ -2,14 +2,11 @@
 
 set -ex
 
-apt-get autoremove --purge -y
-apt-get clean -y
-
-
 for path in /var/cache/apt \
   /var/lib/apt \
   /var/lib/dhcp \
-  /var/log; do
+  /var/log \
+  /etc/NetworkManager/system-connections; do
   if [ -d $path ]; then
     find $path -mindepth 1 -print -delete
   fi
@@ -22,8 +19,11 @@ rm -vf \
   /etc/ssh/*key* \
   /var/cache/ldconfig/aux-cache \
   /var/lib/systemd/random-seed \
-  ~/.bash_history
+  ~/.bash_history \
+  ~/.wget-hsts \
+  /root/original-ks.cfg \
+  /root/anaconda-ks.cfg \
+  /root/.wget-hsts
 
 truncate -s 0 /etc/machine-id
 
-rm -f /root/.wget-hsts

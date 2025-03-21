@@ -1,40 +1,10 @@
 packer {
   required_plugins {
-    ansible = {
-      source  = "github.com/hashicorp/ansible"
-      version = "~> 1"
-    }
-
-    vmware = {
+    qemu = {
       source  = "github.com/hashicorp/qemu"
       version = "~> 1"
     }
   }
-}
-
-variable "boot_wait" {
-  type    = string
-  default = "5s"
-}
-
-variable "disk_size" {
-  type    = string
-  default = "4096"
-}
-
-variable "headless" {
-  type    = bool
-  default = false
-}
-
-variable "efi_firmware_code" {
-  type    = string
-  default = "/usr/share/OVMF/OVMF_CODE_4M.fd"
-}
-
-variable "efi_firmware_vars" {
-  type    = string
-  default = "/usr/share/OVMF/OVMF_VARS_4M.fd"
 }
 
 source "qemu" "debian-13" {
@@ -71,16 +41,16 @@ build {
 
   provisioner "shell" {
     scripts = [
-      "./scripts/00-update-apt.sh",
-      "./scripts/10-setup-legacy-bios-support.sh",
-      "./scripts/10-setup-apt-packages.sh",
-      "./scripts/10-setup-cloud-init.sh",
-      "./scripts/20-setup-zsh.sh",
-      "./scripts/20-setup-fail2ban.sh",
-      "./scripts/30-system-sysctl.sh",
-      "./scripts/98-clean-interfaces.sh",
-      "./scripts/98-clear-apt-cache.sh",
-      "./scripts/99-release-disk-space.sh"
+      "./scripts/debian/00-update-apt.sh",
+      "./scripts/debian/10-setup-legacy-bios-support.sh",
+      "./scripts/debian/10-setup-apt-packages.sh",
+      "./scripts/debian/10-setup-cloud-init.sh",
+      "./scripts/generic/20-setup-zsh.sh",
+      "./scripts/debian/20-setup-fail2ban.sh",
+      "./scripts/generic/30-system-sysctl.sh",
+      "./scripts/debian/98-clean-interfaces.sh",
+      "./scripts/debian/98-clear-apt-cache.sh",
+      "./scripts/generic/99-release-disk-space.sh"
     ]
   }
 }
