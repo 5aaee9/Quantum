@@ -2,4 +2,10 @@
 
 set -ex
 
-sleep 1000000000
+while true; do
+  if [ -f /continue ]; then
+    break
+  fi
+
+  sleep 1
+done
