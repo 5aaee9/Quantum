@@ -18,15 +18,6 @@ datasource_list:
 
 apt:
   generate_mirrorlists: true
-
-system_info:
-  default_user:
-    name: debian
-    sudo: ALL=(ALL) NOPASSWD:ALL
-    shell: /bin/zsh
-    lock_passwd: True
-    gecos: Debian
-    groups: [adm, audio, cdrom, dialout, dip, floppy, plugdev, sudo, video]
-    sudo: ["ALL=(ALL) NOPASSWD:ALL"]
-    shell: /bin/zsh
 EOF
+
+cloud-init clean --machine-id

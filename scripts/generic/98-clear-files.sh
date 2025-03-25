@@ -6,7 +6,8 @@ for path in /var/cache/apt \
   /var/lib/apt \
   /var/lib/dhcp \
   /var/log \
-  /etc/NetworkManager/system-connections; do
+  /etc/NetworkManager/system-connections \
+  /etc/netplan; do
   if [ -d $path ]; then
     find $path -mindepth 1 -print -delete
   fi
@@ -26,4 +27,3 @@ rm -vf \
   /root/.wget-hsts
 
 truncate -s 0 /etc/machine-id
-cloud-init clean
