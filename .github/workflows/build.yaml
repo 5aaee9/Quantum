@@ -26,6 +26,8 @@ jobs:
             codename: almalinux-8
           - name: Alma Linux 9
             codename: almalinux-9
+          - name: Ubuntu 24.04
+            codename: ubuntu-24_04
     steps:
       - uses: actions/checkout@v4
         with:

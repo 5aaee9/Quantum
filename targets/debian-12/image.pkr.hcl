@@ -1,12 +1,3 @@
-packer {
-  required_plugins {
-    qemu = {
-      source  = "github.com/hashicorp/qemu"
-      version = "~> 1"
-    }
-  }
-}
-
 source "qemu" "debian-12" {
   iso_checksum      = "file:https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/SHA256SUMS"
   iso_url           = "https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/debian-12.10.0-amd64-netinst.iso"

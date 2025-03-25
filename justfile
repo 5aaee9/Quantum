@@ -1,7 +1,7 @@
 ci-args := env('CI', '') && "-var-file overrides/headless.pkr.hcl"
 
 build VARIANT:
-  packer init targets/{{VARIANT}}/image.pkr.hcl
+  packer init targets/{{VARIANT}}
   sudo rm -rf outputs/{{VARIANT}} {{VARIANT}}.qcow2
 
   sudo packer build {{ci-args}} \

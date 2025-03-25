@@ -1,0 +1,98 @@
+#cloud-config
+autoinstall:
+  version: 1
+  keyboard:
+    layout: us
+  locale: en_US.UTF-8
+  timezone: Asia/Hong_Kong
+  network:
+    version: 2
+    ethernets:
+      eth0:
+        dhcp4: true
+  identity:
+    hostname: ubuntu
+    username: ubuntu
+    password: '$6$cdtMlj7H7zjttNJQ$kWu.0IPJP/U.jV9xjTQ9X8quSGlHCJb8VBEYnXGi9Gyrt2B5Xlxm0nQt671hsN8XMK7zHjmFqAgl1fjXnmpQi.'
+
+  debconf-selections: |
+    openssh-server openssh-server/permit-root-login boolean false
+    d-i passwd/make-user boolean false
+    d-i passwd/root-login boolean true
+    d-i passwd/root-password-again password 4tH2F34cEDRApj8Y@B26
+    d-i passwd/root-password password 4tH2F34cEDRApj8Y@B26
+    openssh-server openssh-server/permit-root-login	boolean	true
+    ubiquity ubiquity/minimal_install boolean true
+    d-i debian-installer/add-kernel-opts string net.ifnames=0 console=tty0 console=ttyS0,115200 earlyprintk=ttyS0,115200 consoleblank=0
+
+  ssh:
+    install-server: true
+    allow-pw: true
+  codecs:
+    install: false
+  drivers:
+    install: false
+  packages:
+    - sudo
+  storage:
+    grub:
+      reorder_uefi: false
+    config:
+      - type: disk
+        id: disk0
+        ptable: gpt
+        wipe: superblock
+        path: /dev/vda
+
+      - type: partition
+        number: 1
+        id: bios_boot_part   # required by GRUB on first disk
+        size: 1MB
+        device: disk0
+        flag: bios_grub
+        partition_type: EF02
+        wipe: superblock
+        preserve: false
+
+      - id: efi-partition # create partitions on disk (like sda1)
+        number: 2
+        type: partition
+        device: disk0
+        size: 200MB
+        grub_device: true
+        flag: boot # EFI system partition needs boot flag
+
+      - type: partition
+        number: 3
+        id: root-partition
+        device: disk0
+        size: -1
+
+      - id: efi-partition-fs # format partitions on disk
+        type: format
+        volume: efi-partition
+        fstype: fat32
+        label: EFI
+
+      - id: root-partition-fs
+        type: format
+        fstype: btrfs
+        volume: root-partition
+
+      - id: efi-partition-fs-mount # mount partitions
+        type: mount
+        device: efi-partition-fs
+        path: /boot/efi
+
+      - id: root-partition-fs-mount
+        type: mount
+        path: /
+        device: root-partition-fs
+        options: compress=zstd:15,noatime,nodiratime
+
+  updates: security
+
+  late-commands:
+    - sed -i 's|^\(#\)\?\(PermitRootLogin\) \(.*\)|\2 yes|' /target/etc/ssh/sshd_config
+    - echo 'root:4tH2F34cEDRApj8Y@B26' | chpasswd -R /target
+    - curtin in-target --target=/target -- apt-get purge -y snapd

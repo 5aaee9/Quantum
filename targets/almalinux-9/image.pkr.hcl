@@ -1,12 +1,3 @@
-packer {
-  required_plugins {
-    qemu = {
-      source  = "github.com/hashicorp/qemu"
-      version = "~> 1"
-    }
-  }
-}
-
 source "qemu" "almalinux-9" {
   iso_checksum      = "file:https://raw.repo.almalinux.org/almalinux/9/isos/x86_64/CHECKSUM"
   iso_url           = "https://raw.repo.almalinux.org/almalinux/9/isos/x86_64/AlmaLinux-9-latest-x86_64-boot.iso"

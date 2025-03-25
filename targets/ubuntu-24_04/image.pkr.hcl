@@ -1,8 +1,8 @@
-source "qemu" "debian-13" {
-  iso_checksum      = "file:https://cdimage.debian.org/cdimage/weekly-builds/amd64/iso-cd/SHA256SUMS"
-  iso_url           = "https://cdimage.debian.org/cdimage/weekly-builds/amd64/iso-cd/debian-testing-amd64-netinst.iso"
+source "qemu" "ubuntu-24_04" {
+  iso_checksum      = "file:https://releases.ubuntu.com/24.04/SHA256SUMS"
+  iso_url           = "https://releases.ubuntu.com/24.04/ubuntu-24.04.2-live-server-amd64.iso"
 
-  output_directory  = "outputs/debian-13"
+  output_directory  = "outputs/ubuntu-24_04"
   accelerator       = "kvm"
 
   cpus              = 4
@@ -15,12 +15,12 @@ source "qemu" "debian-13" {
   efi_firmware_vars = "${var.efi_firmware_vars}"
 
   headless          = var.headless
-  http_directory    = "http/debian"
+  http_directory    = "http/ubuntu"
   ssh_port          = 22
   ssh_timeout       = "30m"
   ssh_username      = "root"
   ssh_password      = "4tH2F34cEDRApj8Y@B26"
-  boot_command      = ["e<down><down><down><end>net.ifnames=0 priority=critical auto=true preseed/url=http://{{ .HTTPIP }}:{{ .HTTPPort }}/preseed.cfg<leftCtrlOn>x<leftCtrlOff>"]
+  boot_command      = ["e<down><down><down><end> net.ifnames=0 autoinstall 'ds=nocloud;s=http://{{ .HTTPIP }}:{{ .HTTPPort }}/'<F10>"]
   boot_wait         = "${var.boot_wait}"
   qemuargs          = [
     ["-machine", "type=q35,accel=hvf:kvm:whpx:tcg"],
@@ -28,7 +28,7 @@ source "qemu" "debian-13" {
 }
 
 build {
-  sources = ["source.qemu.debian-13"]
+  sources = ["source.qemu.ubuntu-24_04"]
 
   provisioner "shell" {
     scripts = [
@@ -41,6 +41,7 @@ build {
       "./scripts/generic/30-system-sysctl.sh",
       "./scripts/debian/98-clean-interfaces.sh",
       "./scripts/debian/98-clear-apt-cache.sh",
+      "./scripts/ubuntu/98-clean-default-user.sh",
       "./scripts/generic/99-release-disk-space.sh"
     ]
   }

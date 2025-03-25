@@ -26,4 +26,4 @@ rm -vf \
   /root/.wget-hsts
 
 truncate -s 0 /etc/machine-id
-
+cloud-init clean
