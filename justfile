@@ -1,3 +1,5 @@
+set unstable
+
 ci-args := env('CI', '') && "-var-file overrides/headless.pkr.hcl"
 
 build VARIANT:
