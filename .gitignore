@@ -1,3 +1,4 @@
 outputs/
 *.tmp
 *.qcow2
+result-fd
