@@ -18,6 +18,8 @@ jobs:
       fail-fast: false
       matrix:
         builds:
+          - name: Debian 11
+            codename: debian-11
           - name: Debian 12
             codename: debian-12
           - name: Debian 13

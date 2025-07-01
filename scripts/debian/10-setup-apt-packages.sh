@@ -2,7 +2,7 @@
 
 set -ex
 
-apt-get install \
+DEBIAN_FRONTEND=noninteractive apt-get install \
   acpid net-tools curl wget vim htop iftop nload mtr lsof \
   localepurge nano iperf3 gnupg2 zip unzip \
   sudo vnstat jq apt-transport-https ca-certificates \

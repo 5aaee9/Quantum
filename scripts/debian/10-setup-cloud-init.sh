@@ -20,4 +20,4 @@ apt:
   generate_mirrorlists: true
 EOF
 
-cloud-init clean --machine-id
+cloud-init clean --machine-id || cloud-init clean

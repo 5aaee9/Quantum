@@ -20,7 +20,7 @@ source "qemu" "debian-11" {
   ssh_timeout       = "30m"
   ssh_username      = "root"
   ssh_password      = "4tH2F34cEDRApj8Y@B26"
-  boot_command      = ["e<down><down><down><end>net.ifnames=0 priority=critical auto=true preseed/url=http://{{ .HTTPIP }}:{{ .HTTPPort }}/preseed.cfg<leftCtrlOn>x<leftCtrlOff>"]
+  boot_command      = ["<down>e<down><down><down><end>net.ifnames=0 priority=critical auto=true preseed/url=http://{{ .HTTPIP }}:{{ .HTTPPort }}/preseed.cfg<leftCtrlOn>x<leftCtrlOff>"]
   boot_wait         = "${var.boot_wait}"
   qemuargs          = [
     ["-machine", "type=q35,accel=hvf:kvm:whpx:tcg"],
