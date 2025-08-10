@@ -14,7 +14,7 @@ variable "boot_wait" {
 
 variable "disk_size" {
   type    = string
-  default = "4096"
+  default = "5120"
 }
 
 variable "numvcpus" {
