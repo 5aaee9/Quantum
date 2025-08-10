@@ -1,6 +1,6 @@
 source "qemu" "debian-12" {
-  iso_checksum      = "file:https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/SHA256SUMS"
-  iso_url           = "https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/debian-12.11.0-amd64-netinst.iso"
+  iso_checksum      = "file:https://cdimage.debian.org/cdimage/archive/12.11.0/amd64/iso-cd/SHA256SUMS"
+  iso_url           = "https://cdimage.debian.org/cdimage/archive/12.11.0/amd64/iso-cd/debian-12.11.0-amd64-netinst.iso"
 
   output_directory  = "outputs/debian-12"
   accelerator       = "kvm"
