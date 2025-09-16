@@ -3,7 +3,7 @@
 set -ex
 
 dnf install -y \
-  net-tools curl wget vim htop iftop tmux dnsutils \
+  net-tools curl wget neovim htop iftop tmux dnsutils \
   nload mtr lsof nano iperf3 gnupg2 zip unzip util-linux-user \
   sudo vnstat jq ca-certificates zsh git parted xfsprogs
 

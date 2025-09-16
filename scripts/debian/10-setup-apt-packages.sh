@@ -3,7 +3,7 @@
 set -ex
 
 DEBIAN_FRONTEND=noninteractive apt-get install \
-  acpid net-tools curl wget vim htop iftop nload mtr-tiny lsof \
+  acpid net-tools curl wget neovim htop iftop nload mtr-tiny lsof \
   localepurge nano iperf3 gnupg2 zip unzip \
   sudo vnstat jq apt-transport-https ca-certificates \
   zsh git parted xfsprogs systemd-cron locales-all \
