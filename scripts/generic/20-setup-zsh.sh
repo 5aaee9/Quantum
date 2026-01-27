@@ -2,7 +2,7 @@
 
 set -ex
 
-chsh -s /usr/bin/zsh
+# chsh -s /usr/bin/zsh
 echo "" | sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
 
 export ZSH_CUSTOM=/root/.oh-my-zsh/custom
