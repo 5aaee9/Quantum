@@ -24,6 +24,8 @@ jobs:
             codename: debian-12
           - name: Debian 13
             codename: debian-13
+          - name: Debian Testing
+            codename: debian-testing
           - name: Alma Linux 8
             codename: almalinux-8
           - name: Alma Linux 9
