@@ -40,7 +40,7 @@ build {
       "./scripts/debian/20-setup-fail2ban.sh",
       "./scripts/generic/30-system-sysctl.sh",
       "./scripts/ubuntu/50-platform.sh",
-      "./scripts/generic/97-remove-ssh-comment.sh",
+      "./scripts/generic/97-fix-sshd-config.sh",
       "./scripts/debian/98-clean-interfaces.sh",
       "./scripts/debian/98-clear-apt-cache.sh",
       "./scripts/ubuntu/98-clean-default-user.sh",

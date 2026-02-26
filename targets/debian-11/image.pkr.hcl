@@ -39,6 +39,7 @@ build {
       "./scripts/debian/20-setup-fail2ban.sh",
       "./scripts/generic/20-setup-zsh.sh",
       "./scripts/generic/30-system-sysctl.sh",
+      "./scripts/generic/97-fix-sshd-config.sh",
       "./scripts/debian/98-clean-interfaces.sh",
       "./scripts/debian/98-clear-apt-cache.sh",
       "./scripts/generic/98-clear-files.sh",

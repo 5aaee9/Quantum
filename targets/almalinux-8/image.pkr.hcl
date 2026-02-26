@@ -42,6 +42,7 @@ build {
       "./scripts/centos/20-setup-fail2ban.sh",
       "./scripts/generic/20-setup-zsh.sh",
       "./scripts/generic/30-system-sysctl.sh",
+      "./scripts/generic/97-fix-sshd-config.sh",
       "./scripts/generic/98-clear-files.sh",
       "./scripts/centos/99-clear-dnf-cache.sh",
       "./scripts/generic/99-release-disk-space.sh"
