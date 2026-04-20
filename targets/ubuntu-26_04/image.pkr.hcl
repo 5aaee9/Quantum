@@ -28,7 +28,7 @@ source "qemu" "ubuntu-26_04" {
 }
 
 build {
-  sources = ["source.qemu.ubuntu-24_04"]
+  sources = ["source.qemu.ubuntu-26_04"]
 
   provisioner "shell" {
     scripts = [
