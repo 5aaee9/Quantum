@@ -21,7 +21,7 @@ source "qemu" "archlinux" {
   ssh_username      = "root"
   ssh_password      = "4tH2F34cEDRApj8Y@B26"
   boot_command      = [
-    "e<end> net.ifnames=0 console=tty0 console=ttyS0,115200<enter><wait30s>",
+    "e<end> net.ifnames=0 console=tty0 console=ttyS0,115200<enter><wait60s>",
     "curl http://{{ .HTTPIP }}:{{ .HTTPPort }}/install.sh | bash<enter>"
   ]
   boot_wait         = "${var.boot_wait}"
