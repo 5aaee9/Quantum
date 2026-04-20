@@ -5,7 +5,7 @@ set -ex
 pacman -S --noconfirm --needed \
   acpid net-tools curl wget neovim htop iftop nload mtr lsof \
   nano iperf3 gnupg zip unzip sudo vnstat jq ca-certificates \
-  zsh git parted xfsprogs tmux base-devel bind
+  zsh git parted xfsprogs tmux base-devel bind less
 
 systemctl enable fstrim.timer
 

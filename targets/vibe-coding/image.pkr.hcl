@@ -1,13 +1,13 @@
-source "qemu" "archlinux" {
+source "qemu" "vibe-coding" {
   iso_checksum      = "file:https://geo.mirror.pkgbuild.com/iso/latest/sha256sums.txt"
   iso_url           = "https://geo.mirror.pkgbuild.com/iso/latest/archlinux-x86_64.iso"
 
-  output_directory  = "outputs/archlinux"
+  output_directory  = "outputs/vibe-coding"
   accelerator       = "kvm"
 
   cpus              = var.numvcpus
   memory            = var.memory
-  disk_size         = "${var.disk_size}"
+  disk_size         = "20480"
   disk_interface    = "virtio-scsi"
   format            = "qcow2"
 
@@ -28,12 +28,11 @@ source "qemu" "archlinux" {
   boot_wait         = "${var.boot_wait}"
   qemuargs          = [
     ["-machine", "type=q35,accel=hvf:kvm:whpx:tcg"],
-    ["-serial", "file:outputs/archlinux/serial.log"],
   ]
 }
 
 build {
-  sources = ["source.qemu.archlinux"]
+  sources = ["source.qemu.vibe-coding"]
 
   provisioner "shell" {
     scripts = [
@@ -45,6 +44,7 @@ build {
       "./scripts/archlinux/20-setup-fail2ban.sh",
       "./scripts/generic/30-system-sysctl.sh",
       "./scripts/archlinux/50-platform.sh",
+      "./scripts/custom/80-vibe-coding.sh",
       "./scripts/generic/97-fix-sshd-config.sh",
       "./scripts/archlinux/98-clear-pacman-cache.sh",
       "./scripts/generic/98-clear-files.sh",

@@ -42,7 +42,7 @@ autoinstall:
         id: disk0
         ptable: gpt
         wipe: superblock
-        path: /dev/vda
+        path: /dev/sda
 
       - type: partition
         number: 1

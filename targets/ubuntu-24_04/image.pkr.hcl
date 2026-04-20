@@ -8,6 +8,7 @@ source "qemu" "ubuntu-24_04" {
   cpus              = 4
   memory            = 4096
   disk_size         = "${var.disk_size}"
+  disk_interface    = "virtio-scsi"
   format            = "qcow2"
 
   efi_boot          = true

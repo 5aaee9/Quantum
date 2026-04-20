@@ -4,5 +4,5 @@ set -ex
 
 pacman -S --noconfirm --needed grub
 
-grub-install --target=i386-pc /dev/vda --recheck
+grub-install --target=i386-pc /dev/sda --recheck
 grub-mkconfig -o /boot/grub/grub.cfg

@@ -2,7 +2,7 @@
 
 set -ex
 
-pacman -S --noconfirm --needed qemu-guest-agent cloud-init cloud-guest-utils
+pacman -S --noconfirm --needed qemu-guest-agent cloud-init cloud-guest-utils cloud-utils
 
 systemctl enable qemu-guest-agent
 systemctl add-wants multi-user.target cloud-init.target
@@ -16,3 +16,8 @@ datasource_list:
 CLOUDCFG
 
 cloud-init clean --machine-id || cloud-init clean
+
+systemctl enable cloud-init-main.service
+systemctl enable cloud-init-local.service
+systemctl enable cloud-config.service
+systemctl enable cloud-final.service

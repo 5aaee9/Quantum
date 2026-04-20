@@ -36,6 +36,8 @@ jobs:
             codename: ubuntu-26_04
           - name: Arch Linux
             codename: archlinux
+          - name: Vibe Coding Image
+            codename: vibe-coding
     steps:
       - uses: actions/checkout@v4
         with:

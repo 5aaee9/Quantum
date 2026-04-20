@@ -4,4 +4,4 @@ set -ex
 
 apt-get install grub-pc-bin -y
 
-grub-install --target=i386-pc /dev/vda
+grub-install --target=i386-pc /dev/sda

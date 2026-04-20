@@ -2,7 +2,7 @@
 
 set -euxo pipefail
 
-DISK=/dev/vda
+DISK=/dev/sda
 ROOT_PARTITION=${DISK}3
 EFI_PARTITION=${DISK}2
 loadkeys us || true
@@ -76,7 +76,7 @@ printf '%s\n' 'GRUB_RECORDFAIL_TIMEOUT=3' >> /etc/default/grub
 
 grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=GRUB --removable --recheck
 grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=GRUB --recheck
-grub-install --target=i386-pc /dev/vda --recheck
+grub-install --target=i386-pc /dev/sda --recheck
 grub-mkconfig -o /boot/grub/grub.cfg
 CHROOT
 

@@ -8,6 +8,7 @@ source "qemu" "almalinux-8" {
   cpus              = var.numvcpus
   memory            = var.memory
   disk_size         = "${var.disk_size}"
+  disk_interface    = "virtio-scsi"
   format            = "qcow2"
 
   efi_boot          = true
