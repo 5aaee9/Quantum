@@ -65,7 +65,6 @@ NETWORK
 
 systemctl enable systemd-networkd
 systemctl enable systemd-resolved
-ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
 systemctl enable sshd
 
 echo 'root:4tH2F34cEDRApj8Y@B26' | chpasswd
@@ -75,12 +74,12 @@ sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/ssh
 sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT="net.ifnames=0 console=tty0 console=ttyS0,115200 earlyprintk=ttyS0,115200 consoleblank=0"/' /etc/default/grub
 printf '%s\n' 'GRUB_RECORDFAIL_TIMEOUT=3' >> /etc/default/grub
 
-grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=GRUB --removable --no-nvram --recheck
+grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=GRUB --removable --recheck
+grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=GRUB --recheck
 grub-install --target=i386-pc /dev/vda --recheck
 grub-mkconfig -o /boot/grub/grub.cfg
 CHROOT
 
 sync
-eject -s /dev/sr0 || true
 umount -R /mnt
 systemctl reboot
