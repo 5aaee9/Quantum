@@ -32,6 +32,8 @@ jobs:
             codename: almalinux-9
           - name: Ubuntu 24.04
             codename: ubuntu-24_04
+          - name: Ubuntu 26.04
+            codename: ubuntu-26_04
           - name: Arch Linux
             codename: archlinux
     steps:
