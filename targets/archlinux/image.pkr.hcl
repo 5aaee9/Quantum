@@ -21,8 +21,8 @@ source "qemu" "archlinux" {
   ssh_username      = "root"
   ssh_password      = "4tH2F34cEDRApj8Y@B26"
   boot_command      = [
-    "e<down><down><end> net.ifnames=0 console=tty0 console=ttyS0,115200<leftCtrlOn>x<leftCtrlOff>",
-    "<wait180s><enter><wait2s>echo root:4tH2F34cEDRApj8Y@B26 | chpasswd<enter>"
+    "e<down><down><end> net.ifnames=0 console=tty0 console=ttyS0,115200<leftCtrlOn>x<leftCtrlOff><wait180s><enter><wait2s>",
+    "echo root:4tH2F34cEDRApj8Y@B26 | chpasswd; printf '\nPermitRootLogin yes\nPasswordAuthentication yes\n' >> /etc/ssh/sshd_config; systemctl restart sshd<enter>"
   ]
   boot_wait         = "${var.boot_wait}"
   qemuargs          = [
