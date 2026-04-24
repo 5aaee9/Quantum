@@ -18,7 +18,7 @@ useradd indexyz \
 echo "indexyz ALL=(ALL) NOPASSWD:ALL" >>/etc/sudoers.d/nopasswd
 
 runuser() {
-  sudo -iu indexyz bash -lc -- $@
+  sudo -iu indexyz bash -lc -- "$@"
 }
 
 runuser 'curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y'
