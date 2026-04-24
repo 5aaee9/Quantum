@@ -1,6 +1,6 @@
 source "qemu" "ubuntu-26_04" {
   iso_checksum      = "file:https://releases.ubuntu.com/26.04/SHA256SUMS"
-  iso_url           = "https://releases.ubuntu.com/26.04/ubuntu-26.04-beta-live-server-amd64.iso"
+  iso_url           = "https://releases.ubuntu.com/26.04/ubuntu-26.04-live-server-amd64.iso"
 
   output_directory  = "outputs/ubuntu-26_04"
   accelerator       = "kvm"
