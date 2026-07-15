@@ -10,9 +10,3 @@
 - Ubuntu 24.04
 - Ubuntu 26.04
 - Arch Linux
-
-## Application Based Images
-
-### Vibe Coding
-
-Pre installed `codex`, `claude-code`

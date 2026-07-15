@@ -106,7 +106,3 @@ import_virtual_machine "https://alist.indexyz.me/d/Local/VirtualMachineImages/al
 import_virtual_machine "https://alist.indexyz.me/d/Local/VirtualMachineImages/ubuntu-24_04.qcow2" "Ubuntu-24.04" 6
 import_virtual_machine "https://alist.indexyz.me/d/Local/VirtualMachineImages/ubuntu-26_04.qcow2" "Ubuntu-26.04" 7
 import_virtual_machine "https://alist.indexyz.me/d/Local/VirtualMachineImages/archlinux.qcow2" "ArchLinux" 8
-
-if [ ! -z "${WITH_APP_IMAGES:-}" ]; then
-    import_virtual_machine "https://alist.indexyz.me/d/Local/VirtualMachineImages/vibe-coding.qcow2" "Vibe-Coding" 50
-fi
