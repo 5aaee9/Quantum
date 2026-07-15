@@ -1,6 +1,4 @@
-set unstable
-
-ci-args := env('CI', '') && "-var-file overrides/headless.pkr.hcl"
+ci-args := if env('CI', '') != '' { "-var-file overrides/headless.pkr.hcl" } else { "" }
 
 build VARIANT:
   sudo packer init targets/{{VARIANT}}

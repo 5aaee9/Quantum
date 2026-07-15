@@ -4,6 +4,8 @@ source "qemu" "vibe-coding" {
 
   output_directory  = "outputs/vibe-coding"
   accelerator       = "kvm"
+  # OpenCode's baseline binary requires SSE4.2, which QEMU's default CPU omits.
+  cpu_model         = "Nehalem"
 
   cpus              = var.numvcpus
   memory            = var.memory

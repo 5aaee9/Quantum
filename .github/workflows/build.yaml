@@ -39,16 +39,18 @@ jobs:
           - name: Vibe Coding Image
             codename: vibe-coding
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       - name: Setup packer
-        uses: hashicorp/setup-packer@main
+        uses: hashicorp/setup-packer@v3.4.0
         with:
-          version: latest
+          version: '1.15.4'
 
-      - uses: extractions/setup-just@v2
+      - uses: extractions/setup-just@v4
+        with:
+          just-version: '1.56.0'
 
       - name: Install deps
         run: |
@@ -60,7 +62,6 @@ jobs:
           ALIST_UPLOAD_DOMAIN: ${{ secrets.ALIST_UPLOAD_URL }}
           ALIST_USERNAME: ${{ secrets.ALIST_USERNAME }}
           ALIST_PASSWORD: ${{ secrets.ALIST_PASSWORD }}
-          JUST_UNSTABLE: true
         run: |
           just build "${{ matrix.builds.codename }}"
           bash .github/scripts/upload-alist.sh "${{ matrix.builds.codename }}.qcow2" "/Local/VirtualMachineImages"
