@@ -30,6 +30,12 @@ jobs:
             codename: almalinux-8
           - name: Alma Linux 9
             codename: almalinux-9
+          - name: Rocky Linux 8
+            codename: rockylinux-8
+          - name: Rocky Linux 9
+            codename: rockylinux-9
+          - name: Rocky Linux 10
+            codename: rockylinux-10
           - name: Ubuntu 24.04
             codename: ubuntu-24_04
           - name: Ubuntu 26.04
