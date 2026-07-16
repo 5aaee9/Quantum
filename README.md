@@ -7,6 +7,7 @@
 - Debian Unstable
 - Alma Linux 8
 - Alma Linux 9
+- Alma Linux 10
 - Rocky Linux 8
 - Rocky Linux 9
 - Rocky Linux 10

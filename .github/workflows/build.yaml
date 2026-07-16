@@ -30,6 +30,8 @@ jobs:
             codename: almalinux-8
           - name: Alma Linux 9
             codename: almalinux-9
+          - name: Alma Linux 10
+            codename: almalinux-10
           - name: Rocky Linux 8
             codename: rockylinux-8
           - name: Rocky Linux 9

@@ -109,3 +109,4 @@ import_virtual_machine "https://alist.indexyz.me/d/Local/VirtualMachineImages/ar
 import_virtual_machine "https://alist.indexyz.me/d/Local/VirtualMachineImages/rockylinux-8.qcow2" "RockyLinux-8" 9
 import_virtual_machine "https://alist.indexyz.me/d/Local/VirtualMachineImages/rockylinux-9.qcow2" "RockyLinux-9" 10
 import_virtual_machine "https://alist.indexyz.me/d/Local/VirtualMachineImages/rockylinux-10.qcow2" "RockyLinux-10" 11
+import_virtual_machine "https://alist.indexyz.me/d/Local/VirtualMachineImages/almalinux-10.qcow2" "AlmaLinux-10" 12
