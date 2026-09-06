@@ -21,6 +21,11 @@ source "qemu" "debian-testing" {
   ssh_timeout       = "30m"
   ssh_username      = "root"
   ssh_password      = "4tH2F34cEDRApj8Y@B26"
+  # openssh-server in Debian testing no longer depends on openssh-client,
+  # so `scp` is missing in the installed system and the default SCP-based
+  # script upload fails with "SCP failed to start". The sftp-server
+  # subsystem is always present (hard dependency of openssh-server).
+  ssh_file_transfer_method = "sftp"
   boot_command      = ["e<down><down><down><end>net.ifnames=0 priority=critical auto=true preseed/url=http://{{ .HTTPIP }}:{{ .HTTPPort }}/preseed.cfg<leftCtrlOn>x<leftCtrlOff>"]
   boot_wait         = "${var.boot_wait}"
   qemuargs          = [
