@@ -44,6 +44,8 @@ jobs:
             codename: ubuntu-26_04
           - name: Arch Linux
             codename: archlinux
+          - name: GitHub Runner
+            codename: github-runner
     steps:
       - uses: actions/checkout@v5
         with:
