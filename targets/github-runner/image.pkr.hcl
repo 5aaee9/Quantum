@@ -41,6 +41,8 @@ build {
       "./scripts/debian/20-setup-fail2ban.sh",
       "./scripts/generic/30-system-sysctl.sh",
       "./scripts/github-runner/50-setup-github-runner.sh",
+      "./scripts/github-runner/51-setup-docker.sh",
+      "./scripts/github-runner/52-setup-toolchain.sh",
       "./scripts/ubuntu/50-platform.sh",
       "./scripts/generic/97-fix-sshd-config.sh",
       "./scripts/debian/98-clean-interfaces.sh",

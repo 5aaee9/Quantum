@@ -12,11 +12,12 @@ variable "boot_wait" {
   default = "5s"
 }
 
-# The pre-installed actions/runner bundle (with its bundled .NET and Node
-# runtimes) needs ~1 GB extra space on top of the base system.
+# Roomy disk: the pre-installed runner bundle and toolchain (runner +
+# Docker + Node + Python + CLIs) take ~2 GB, and CI jobs pull container
+# images onto the same volume.
 variable "disk_size" {
   type    = string
-  default = "10240"
+  default = "30720"
 }
 
 variable "numvcpus" {
