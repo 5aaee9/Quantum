@@ -4,6 +4,9 @@ on:
   schedule:
   - cron: '0 14 * * 1'
   push:
+    paths-ignore:
+    - 'docs/**'
+    - '**.md'
 
 concurrency:
   group: "${{ github.workflow }}-${{ github.ref }}"
