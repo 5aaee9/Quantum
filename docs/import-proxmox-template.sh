@@ -110,3 +110,4 @@ import_virtual_machine "https://alist.indexyz.me/d/Local/VirtualMachineImages/ro
 import_virtual_machine "https://alist.indexyz.me/d/Local/VirtualMachineImages/rockylinux-9.qcow2" "RockyLinux-9" 10
 import_virtual_machine "https://alist.indexyz.me/d/Local/VirtualMachineImages/rockylinux-10.qcow2" "RockyLinux-10" 11
 import_virtual_machine "https://alist.indexyz.me/d/Local/VirtualMachineImages/almalinux-10.qcow2" "AlmaLinux-10" 12
+import_virtual_machine "https://alist.indexyz.me/d/Local/VirtualMachineImages/github-runner.qcow2" "GitHub-Runner" 13
