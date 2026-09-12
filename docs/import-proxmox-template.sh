@@ -11,14 +11,24 @@ if ! command -v jq &> /dev/null; then
 fi
 
 if [[ "${SKIP_CLEANUP_TEMPLATE:-}" == "" ]]; then
-    TEMPLATE_VMID_LIST=$(pvesh get /cluster/resources --type vm --output-format json | jq ".[] | select(.template == 1) | .vmid")
+    TEMPLATE_VMID_LIST=$(pvesh get /cluster/resources --type vm --output-format json | jq -r ".[] | select(.template == 1) | .vmid")
+    MIN_TEMPLATE_VMID=""
     for vmid in $TEMPLATE_VMID_LIST; do
         FOUND_TEMPLATE=$(qm config $vmid | { grep description || true; } | { grep "IndexTemplate" || true; } | wc -l)
         if [[ "$FOUND_TEMPLATE" == "1" ]]; then
             echo Remove VM $vmid
             qm destroy $vmid --destroy-unreferenced-disks 1
+            if [[ -z "$MIN_TEMPLATE_VMID" ]] || [[ "$vmid" -lt "$MIN_TEMPLATE_VMID" ]]; then
+                MIN_TEMPLATE_VMID=$vmid
+            fi
         fi
     done
+    # Reuse the smallest old template VMID so recreated templates keep stable IDs,
+    # unless the user explicitly set the VMID env var.
+    if [[ -z "${VMID:-}" ]] && [[ -n "$MIN_TEMPLATE_VMID" ]]; then
+        VMID_OFFSET=$MIN_TEMPLATE_VMID
+        echo "Auto-discovered VMID_OFFSET => ${VMID_OFFSET}"
+    fi
 fi
 
 
