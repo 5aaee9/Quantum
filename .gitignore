@@ -3,3 +3,4 @@ outputs/
 *.qcow2
 result-fd
 .omx
+drivers/

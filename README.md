@@ -15,3 +15,4 @@
 - Ubuntu 26.04
 - Arch Linux
 - GitHub Runner (Ubuntu 24.04, actions/runner, Docker, Node.js, Python, gh/kubectl/helm/terraform)
+- Windows 2025 Runner (Windows Server 2025 Datacenter Eval, actions/runner, Git, pwsh, Cloudbase-Init)

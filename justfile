@@ -9,6 +9,22 @@ build VARIANT:
 
   qemu-img convert -O qcow2 -c outputs/{{VARIANT}}/packer-{{VARIANT}} {{VARIANT}}.qcow2
 
+# Windows targets additionally need the virtio drivers staged under
+# ./drivers (they end up on the packer provision ISO).
+build-windows VARIANT: fetch-windows-drivers
+  sudo packer init targets/{{VARIANT}}
+  sudo rm -rf outputs/{{VARIANT}} {{VARIANT}}.qcow2
+
+  sudo packer build {{ci-args}} \
+    targets/{{VARIANT}}
+
+  qemu-img convert -O qcow2 -c outputs/{{VARIANT}}/packer-{{VARIANT}} {{VARIANT}}.qcow2
+
+# Fetch the stable virtio-win.iso and extract the 2k25 drivers + guest
+# tools into ./drivers. Needs bsdtar (libarchive-tools) or xorriso.
+fetch-windows-drivers:
+  bash scripts/fetch-windows-drivers.sh
+
 prepare-nixos:
   nix build nixpkgs#OVMFFull.fd
   sudo mkdir -p /usr/share/OVMF

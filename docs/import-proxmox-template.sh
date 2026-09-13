@@ -121,3 +121,65 @@ import_virtual_machine "https://alist.indexyz.me/d/Local/VirtualMachineImages/ro
 import_virtual_machine "https://alist.indexyz.me/d/Local/VirtualMachineImages/rockylinux-10.qcow2" "RockyLinux-10" 11
 import_virtual_machine "https://alist.indexyz.me/d/Local/VirtualMachineImages/almalinux-10.qcow2" "AlmaLinux-10" 12
 import_virtual_machine "https://alist.indexyz.me/d/Local/VirtualMachineImages/github-runner.qcow2" "GitHub-Runner" 13
+
+# Windows Server 2025 (Datacenter Eval + actions runner + cloudbase-init).
+# Differences vs linux templates:
+#   --ostype win11:        correct defaults for Server 2025 (q35, uefi, virtio)
+#   --tpmstate0:           vTPM 2.0, expected by modern Windows
+#   --vga qxl:             graphical console; serial0 is kept for the
+#                          cloudbase-init COM1 log output
+#   --citype configdrive2: Proxmox then exports admin_pass + ssh keys in
+#                          OpenStack config-drive format, which cloudbase-init
+#                          uses to set the Administrator password
+import_windows_virtual_machine() {
+    download_url=$1
+    name=$2
+    id_index=$3
+
+    current_id=$(($VMID_OFFSET + $id_index))
+
+    qm create "$current_id" \
+        --name "$name" \
+        --memory 8192 \
+        --cpu host \
+        --cores 4 \
+        --ostype win11 \
+        --bios ovmf \
+        --machine q35 \
+        --efidisk0 "${VM_STORAGE}:0,pre-enrolled-keys=0" \
+        --tpmstate0 "${VM_STORAGE}:1,version=v2.0" \
+        --net0 virtio,bridge=vmbr0 \
+        --scsihw virtio-scsi-pci \
+        --ide2 "${VM_STORAGE}:cloudinit" \
+        --citype configdrive2 \
+        --serial0 socket --vga qxl \
+        --agent enabled=1 \
+        --ciuser "Administrator" \
+        --cipassword "${SYSTEM_PASSWORD}" \
+        --description IndexTemplate \
+        --ipconfig0 ip=dhcp
+
+    wget -O current.qcow2 "$download_url"
+
+    qm importdisk "$current_id" current.qcow2 "${VM_STORAGE}" --format qcow2
+
+    rm -f current.qcow2
+
+    if [[ $VM_STORAGE_TYPE == "zfspool" ]] || [[ $VM_STORAGE_TYPE == "lvmthin" ]]; then
+        qm set "$current_id" \
+            --scsi0 "${VM_STORAGE}:vm-$current_id-disk-1,discard=on" \
+            --boot c --bootdisk scsi0
+    elif [[ $VM_STORAGE_TYPE == "btrfs" ]]; then
+        qm set "$current_id" \
+            --scsi0 "${VM_STORAGE}:$current_id/vm-$current_id-disk-1.raw,discard=on" \
+            --boot c --bootdisk scsi0
+    else
+        qm set "$current_id" \
+            --scsi0 "${VM_STORAGE}:$current_id/vm-$current_id-disk-1.qcow2,discard=on" \
+            --boot c --bootdisk scsi0
+    fi
+
+    qm template "$current_id"
+}
+
+import_windows_virtual_machine "https://alist.indexyz.me/d/Local/VirtualMachineImages/windows-2025-runner.qcow2" "Windows-2025-Runner" 14

@@ -49,6 +49,9 @@ jobs:
             codename: archlinux
           - name: GitHub Runner
             codename: github-runner
+          - name: Windows 2025 Runner
+            codename: windows-2025-runner
+            windows: true
     steps:
       - uses: actions/checkout@v5
         with:
@@ -66,7 +69,7 @@ jobs:
       - name: Install deps
         run: |
           sudo apt-get update -y
-          sudo apt-get install qemu-utils qemu-kvm -y
+          sudo apt-get install qemu-utils qemu-kvm libarchive-tools -y
 
       - name: Build
         env:
@@ -74,5 +77,9 @@ jobs:
           ALIST_USERNAME: ${{ secrets.ALIST_USERNAME }}
           ALIST_PASSWORD: ${{ secrets.ALIST_PASSWORD }}
         run: |
-          just build "${{ matrix.builds.codename }}"
+          if [ "${{ matrix.builds.windows }}" = "true" ]; then
+            just build-windows "${{ matrix.builds.codename }}"
+          else
+            just build "${{ matrix.builds.codename }}"
+          fi
           bash .github/scripts/upload-alist.sh "${{ matrix.builds.codename }}.qcow2" "/Local/VirtualMachineImages"
