@@ -74,7 +74,9 @@ source "qemu" "windows-2025-runner" {
   communicator           = "ssh"
   ssh_username           = var.ssh_username
   ssh_password           = var.ssh_password
-  ssh_timeout            = "4h"
+  # 90min is generous — sshd comes up within a few minutes of the desktop
+  # appearing; a longer wait just delays discovering a broken bootstrap.
+  ssh_timeout            = "90m"
   ssh_file_transfer_method = "sftp"
   shutdown_command       = "powershell -NoProfile -ExecutionPolicy Bypass -File C:/Windows/Temp/packer-sysprep-shutdown.ps1"
   shutdown_timeout       = "1h"
