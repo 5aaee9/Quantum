@@ -20,31 +20,66 @@ trap {
     [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
 # --- OpenSSH -------------------------------------------------------------
-# Server 2025 ships OpenSSH Server as an inbox capability; the payload is
-# staged locally so no Windows Update access is required. Fall back to the
-# Win32-OpenSSH release zip if the capability is not present.
-$openSshCapability = Get-WindowsCapability -Online -Name 'OpenSSH.Server~~~~*'
-if ($openSshCapability -and $openSshCapability.State -ne 'NotPresent') {
-    Write-Host 'Installing the inbox OpenSSH.Server capability...'
-    Add-WindowsCapability -Online -Name $openSshCapability.Name | Out-Null
-    $openSshBin = 'C:\Windows\System32\OpenSSH'
-} else {
-    Write-Host 'Inbox capability unavailable; installing Win32-OpenSSH...'
-    $openSshBin = 'C:\Program Files\OpenSSH'
-    $version = '9.8.3.0p1-Preview'
-    $zip = "$env:TEMP\OpenSSH-Win64.zip"
-    Invoke-WebRequest `
-        -Uri "https://github.com/PowerShell/Win32-OpenSSH/releases/download/$version/OpenSSH-Win64.zip" `
-        -OutFile $zip
-    Expand-Archive $zip 'C:\Program Files'
-    Move-Item 'C:\Program Files\OpenSSH-Win64' $openSshBin
-    [Environment]::SetEnvironmentVariable(
-        'PATH',
-        "$([Environment]::GetEnvironmentVariable('PATH', 'Machine'));$openSshBin",
-        'Machine')
-    & "$openSshBin\install-sshd.ps1" -Confirm:$false
-    Remove-Item $zip
+# Install the PowerShell/Win32-OpenSSH release (more predictable than the
+# inbox capability, which on eval media can require a reboot before sshd
+# registers). Removes any Windows-provided OpenSSH first.
+$openSshBin = 'C:\Program Files\OpenSSH'
+$openSshConfigHome = 'C:\ProgramData\ssh'
+
+$existing = Get-WindowsCapability -Online -Name 'OpenSSH.*' | Where-Object { $_.State -ne 'NotPresent' }
+if ($existing) {
+    Write-Host 'Removing the Windows-provided OpenSSH capabilities...'
+    $existing | Remove-WindowsCapability -Online | Out-Null
 }
+
+# see https://github.com/PowerShell/Win32-OpenSSH/releases
+$openSshVersion = '10.0.0.0p2-Preview'
+$zip = "$env:TEMP\OpenSSH-Win64.zip"
+while ($true) {
+    try {
+        Invoke-WebRequest `
+            -Uri "https://github.com/PowerShell/Win32-OpenSSH/releases/download/$openSshVersion/OpenSSH-Win64.zip" `
+            -OutFile $zip
+        break
+    } catch {
+        Write-Host "openssh download failed ($_), retrying..."
+        Start-Sleep -Seconds 5
+    }
+}
+Expand-Archive $zip 'C:\Program Files'
+if (Test-Path 'C:\Program Files\OpenSSH-Win64') {
+    Move-Item 'C:\Program Files\OpenSSH-Win64' $openSshBin
+}
+Remove-Item $zip
+[Environment]::SetEnvironmentVariable(
+    'PATH',
+    "$([Environment]::GetEnvironmentVariable('PATH', 'Machine'));$openSshBin",
+    'Machine')
+
+# relax the default sshd_config the service will copy on first start:
+# administrators use ~/.ssh/authorized_keys (not the separate file) and
+# skip reverse DNS.
+$sshdConfig = Get-Content -Raw "$openSshBin\sshd_config_default"
+$sshdConfig = $sshdConfig `
+    -replace '(?m)^(Match Group administrators.*)', '#$1' `
+    -replace '(?m)^(\s*AuthorizedKeysFile __PROGRAMDATA__/ssh/administrators_authorized_keys.*)', '#$1' `
+    -replace '(?m)^#?\s*UseDNS .+', 'UseDNS no'
+Set-Content -Encoding ascii -NoNewline -Path "$openSshBin\sshd_config_default" -Value $sshdConfig
+
+& "$openSshBin\install-sshd.ps1" -Confirm:$false
+
+# wait for host keys + config to be generated, then restart cleanly.
+Start-Service sshd
+$deadline = (Get-Date).AddMinutes(3)
+while ((Get-Date) -lt $deadline) {
+    $ready = @('ssh_host_ed25519_key', 'sshd_config') | ForEach-Object {
+        $f = "$openSshConfigHome\$_"
+        (Test-Path $f) -and (Get-Item $f).Length -gt 0
+    } | Where-Object { -not $_ }
+    if (-not $ready) { break }
+    Start-Sleep -Seconds 3
+}
+Stop-Service sshd -Force -ErrorAction SilentlyContinue
 
 Write-Host 'Configuring and starting sshd...'
 if (-not (Get-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -ErrorAction SilentlyContinue)) {

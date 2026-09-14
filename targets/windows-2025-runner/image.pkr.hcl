@@ -2,12 +2,16 @@
 # Cloudbase-Init (Windows cloud-init re-implementation).
 #
 # Boot media layout (qemu):
-#   - Windows install ISO          -> first CD-ROM  (D: in WinPE)
-#   - cd_files provision ISO       -> second CD-ROM (E: in WinPE)
+#   - floppy_files  -> A:    autounattend.xml + first-logon bootstrap.
+#                            The floppy is the canonical answer-file
+#                            location Windows Setup searches first.
+#   - Windows install ISO    -> first CD-ROM
+#   - cd_files provision ISO -> second CD-ROM (drivers + guest tools)
 # The provision ISO carries the virtio-win drivers (needed for the
-# virtio-scsi boot disk + virtio-net NIC), autounattend.xml and the
-# first-logon bootstrap script. `just build-windows` fetches the drivers
-# into ./drivers first.
+# virtio-scsi boot disk + virtio-net NIC) and the QEMU guest-tools
+# installer. `just build-windows` fetches them into ./drivers first.
+# autounattend.xml DriverPaths probes every CD drive letter, so the
+# drivers are found regardless of letter ordering.
 #
 # Structure follows rgl/windows-vagrant (proven packer+qemu windows
 # builds): https://github.com/rgl/windows-vagrant
@@ -36,7 +40,15 @@ source "qemu" "windows-2025-runner" {
   boot_wait         = var.boot_wait
   boot_command      = ["<space><wait><space><wait><space><wait><space><wait><space><wait><space><wait><space><wait><space><wait><space><wait><space><wait>"]
 
-  # Provision ISO (becomes E: in WinPE — see DriverPaths in autounattend.xml).
+  # Answer file + first-logon bootstrap on a virtual floppy (A:). Windows
+  # Setup checks A:\autounattend.xml before any other location, which is
+  # the most reliable way to make it pick the file up.
+  floppy_files = [
+    "http/windows-2025-runner/autounattend.xml",
+    "http/windows-2025-runner/provision-first-logon.ps1",
+  ]
+
+  # Provision ISO with the virtio-win drivers + QEMU guest-tools.
   cd_label          = "PROVISION"
   cd_files = [
     "drivers/NetKVM/2k25/amd64/*.cat",
@@ -53,7 +65,6 @@ source "qemu" "windows-2025-runner" {
     "drivers/viostor/2k25/amd64/*.inf",
     "drivers/viostor/2k25/amd64/*.sys",
     "drivers/virtio-win-guest-tools.exe",
-    "http/windows-2025-runner/autounattend.xml",
     "http/windows-2025-runner/provision-first-logon.ps1",
   ]
 

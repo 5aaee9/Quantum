@@ -1,24 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-  Unattended setup for Windows Server 2025 Datacenter Evaluation
-  (Desktop Experience, /IMAGE/INDEX = 4).
-
-  Eval ISO image indexes (26100.32230):
-    1 = Standard Eval          2 = Standard Eval (Desktop Experience)
-    3 = Datacenter Eval        4 = Datacenter Eval (Desktop Experience)
-
-  The provision ISO built by packer cd_files is E: in WinPE (the install
-  media is D:). VirtIO drivers are staged on it under drivers/<name>/2k25.
--->
 <unattend xmlns="urn:schemas-microsoft-com:unattend">
     <settings pass="windowsPE">
-        <!-- make WinPE (and the installed OS) see the virtio-scsi disk and
-             virtio-net NIC. DriverPaths recurses E:\ and picks the 2k25
-             drivers from the provision ISO. -->
         <component name="Microsoft-Windows-PnpCustomizationsWinPE" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
             <DriverPaths>
                 <PathAndCredentials wcm:action="add" wcm:keyValue="1">
+                    <Path>D:\</Path>
+                </PathAndCredentials>
+                <PathAndCredentials wcm:action="add" wcm:keyValue="2">
                     <Path>E:\</Path>
+                </PathAndCredentials>
+                <PathAndCredentials wcm:action="add" wcm:keyValue="3">
+                    <Path>F:\</Path>
                 </PathAndCredentials>
             </DriverPaths>
         </component>
@@ -81,9 +73,15 @@
             </ImageInstall>
             <UserData>
                 <ProductKey>
-                    <!-- Evaluation media needs no key. For retail/VL media set
-                         a KMS GVLK, e.g. Datacenter:
-                         VDYBN-27WPP-V4HQT-9VMD4-VMK7H -->
+                    <!--
+                        Generic Volume License Keys (GVLK) for Key Management Services (KMS) client activation
+                        https://learn.microsoft.com/en-us/windows-server/get-started/kms-client-activation-keys
+                    -->
+                    <!--<Key>VDYBN-27WPP-V4HQT-9VMD4-VMK7H</Key>-->
+                    <!--
+                        See https://learn.microsoft.com/en-us/windows-server/get-started/get-started-with-windows-server-insiders-preview
+                    -->
+                    <!--<Key>MFY9F-XBN2F-TYFMP-CCV49-RMYVH</Key>-->
                     <WillShowUI>OnError</WillShowUI>
                 </ProductKey>
                 <AcceptEula>true</AcceptEula>
@@ -122,16 +120,16 @@
             <TimeZone>UTC</TimeZone>
             <UserAccounts>
                 <AdministratorPassword>
-                    <Value>4tH2F34cEDRApj8Y@B26</Value>
-                    <PlainText>true</PlainText>
+                    <Value>NAB0AEgAMgBGADMANABjAEUARABSAEEAcABqADgAWQBAAEIAMgA2AEEAZABtAGkAbgBpAHMAdAByAGEAdABvAHIAUABhAHMAcwB3AG8AcgBkAA==</Value>
+                    <PlainText>false</PlainText>
                 </AdministratorPassword>
                 <LocalAccounts>
                     <LocalAccount wcm:action="add">
                         <Password>
-                            <Value>4tH2F34cEDRApj8Y@B26</Value>
-                            <PlainText>true</PlainText>
+                            <Value>NAB0AEgAMgBGADMANABjAEUARABSAEEAcABqADgAWQBAAEIAMgA2AFAAYQBzAHMAdwBvAHIAZAA=</Value>
+                            <PlainText>false</PlainText>
                         </Password>
-                        <Description>Temporary packer build account</Description>
+                        <Description>packer</Description>
                         <DisplayName>packer</DisplayName>
                         <Group>Administrators</Group>
                         <Name>packer</Name>
@@ -139,27 +137,27 @@
                 </LocalAccounts>
             </UserAccounts>
             <AutoLogon>
-                <Enabled>true</Enabled>
-                <LogonCount>1</LogonCount>
-                <Username>packer</Username>
                 <Password>
-                    <Value>4tH2F34cEDRApj8Y@B26</Value>
-                    <PlainText>true</PlainText>
+                    <Value>NAB0AEgAMgBGADMANABjAEUARABSAEEAcABqADgAWQBAAEIAMgA2AFAAYQBzAHMAdwBvAHIAZAA=</Value>
+                    <PlainText>false</PlainText>
                 </Password>
+                <Enabled>true</Enabled>
+                <Username>packer</Username>
             </AutoLogon>
             <FirstLogonCommands>
                 <SynchronousCommand wcm:action="add">
                     <Order>1</Order>
-                    <CommandLine>PowerShell -Command "Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Force"</CommandLine>
-                    <Description>Relax the PowerShell execution policy</Description>
+                    <CommandLine>PowerShell "Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Force"</CommandLine>
+                    <Description>Change the default PowerShell Execution Policy from Restricted to RemoteSigned</Description>
                 </SynchronousCommand>
                 <SynchronousCommand wcm:action="add">
                     <Order>2</Order>
-                    <!-- locate provision-first-logon.ps1 on the provision ISO
-                         (any drive letter) and run it: installs OpenSSH so
-                         packer can take over. -->
-                    <CommandLine>PowerShell -WindowStyle Maximized -ExecutionPolicy Bypass -Command "Get-PSDrive -PSProvider FileSystem | ForEach-Object {$p = Join-Path $_.Root 'provision-first-logon.ps1'; if (Test-Path $p) {&amp;$p}}"</CommandLine>
-                    <Description>Run the first-logon bootstrap script</Description>
+                    <CommandLine>C:\Windows\SysWOW64\cmd /c PowerShell -Command "Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Force"</CommandLine>
+                    <Description>Change the default PowerShell (32-bit) Execution Policy from Restricted to RemoteSigned</Description>
+                </SynchronousCommand>
+                <SynchronousCommand wcm:action="add">
+                    <Order>3</Order>
+                    <CommandLine>PowerShell -WindowStyle Maximized -Command "Get-PSDrive -PSProvider FileSystem | ForEach-Object {$p = Join-Path $_.Root provision-first-logon.ps1; if (Test-Path $p) {&amp;$p}}"</CommandLine>
                 </SynchronousCommand>
             </FirstLogonCommands>
         </component>
@@ -174,4 +172,5 @@
             <EnableLUA>false</EnableLUA>
         </component>
     </settings>
+    <cpi:offlineImage cpi:source="wim:c:/wim/windows-2025/install.wim#Windows Server 2025 SERVERSTANDARD" xmlns:cpi="urn:schemas-microsoft-com:cpi" />
 </unattend>
