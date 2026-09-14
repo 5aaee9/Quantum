@@ -44,6 +44,12 @@ Write-Host "Running sysprep /generalize /oobe /shutdown ..."
 Stop-Transcript | Out-Null
 '@
 
+# --- restore the firewall ----------------------------------------------------
+# The specialize pass disabled it so QEMU slirp hostfwd could reach sshd.
+# Turn it back on for the final image; the explicit SSH inbound rule stays.
+Write-Host 'Re-enabling Windows Firewall...'
+netsh advfirewall set allprofiles state on | Out-Null
+
 # --- clean transient state --------------------------------------------------
 # NB keep packer-sysprep-shutdown.ps1 — shutdown_command runs it next.
 Write-Host 'Cleaning temp files, event logs and download caches...'

@@ -2,16 +2,12 @@
 # Cloudbase-Init (Windows cloud-init re-implementation).
 #
 # Boot media layout (qemu):
-#   - floppy_files  -> A:    autounattend.xml + first-logon bootstrap.
-#                            The floppy is the canonical answer-file
-#                            location Windows Setup searches first.
-#   - Windows install ISO    -> first CD-ROM
-#   - cd_files provision ISO -> second CD-ROM (drivers + guest tools)
-# The provision ISO carries the virtio-win drivers (needed for the
-# virtio-scsi boot disk + virtio-net NIC) and the QEMU guest-tools
-# installer. `just build-windows` fetches them into ./drivers first.
-# autounattend.xml DriverPaths probes every CD drive letter, so the
-# drivers are found regardless of letter ordering.
+#   - Windows install ISO    -> first CD-ROM  (D: in WinPE)
+#   - cd_files provision ISO -> second CD-ROM (E: in WinPE)
+# The provision ISO carries autounattend.xml, the virtio-win drivers
+# (virtio-scsi boot disk + virtio-net NIC + friends), the QEMU
+# guest-tools installer, and the first-logon bootstrap script.
+# `just build-windows` fetches the drivers into ./drivers first.
 #
 # Structure follows rgl/windows-vagrant (proven packer+qemu windows
 # builds): https://github.com/rgl/windows-vagrant
@@ -40,17 +36,17 @@ source "qemu" "windows-2025-runner" {
   boot_wait         = var.boot_wait
   boot_command      = ["<space><wait><space><wait><space><wait><space><wait><space><wait><space><wait><space><wait><space><wait><space><wait><space><wait>"]
 
-  # Answer file + first-logon bootstrap on a virtual floppy (A:). Windows
-  # Setup checks A:\autounattend.xml before any other location, which is
-  # the most reliable way to make it pick the file up.
-  floppy_files = [
-    "http/windows-2025-runner/autounattend.xml",
-    "http/windows-2025-runner/provision-first-logon.ps1",
-  ]
-
-  # Provision ISO with the virtio-win drivers + QEMU guest-tools.
+  # Single provision ISO at E: (the second CD-ROM): autounattend.xml +
+  # the virtio-win drivers + QEMU guest-tools + the first-logon script.
+  # Windows Setup scans every CD for autounattend.xml, and DriverPaths in
+  # it points at E:\ so Setup injects *all* matching drivers — including
+  # NetKVM — into the installed image (this is rgl/windows-vagrant's
+  # proven single-CD layout; splitting the answer file onto a floppy left
+  # the network driver out and SSH never came up).
   cd_label          = "PROVISION"
   cd_files = [
+    "http/windows-2025-runner/autounattend.xml",
+    "http/windows-2025-runner/provision-first-logon.ps1",
     "drivers/NetKVM/2k25/amd64/*.cat",
     "drivers/NetKVM/2k25/amd64/*.inf",
     "drivers/NetKVM/2k25/amd64/*.sys",
@@ -65,7 +61,6 @@ source "qemu" "windows-2025-runner" {
     "drivers/viostor/2k25/amd64/*.inf",
     "drivers/viostor/2k25/amd64/*.sys",
     "drivers/virtio-win-guest-tools.exe",
-    "http/windows-2025-runner/provision-first-logon.ps1",
   ]
 
   # Packer talks to Windows over OpenSSH (installed by the first-logon
