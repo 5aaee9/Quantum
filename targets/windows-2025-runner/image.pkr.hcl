@@ -82,6 +82,10 @@ source "qemu" "windows-2025-runner" {
     ["-cpu", "host,hv-passthrough"],
     ["-rtc", "base=localtime,clock=host"],
     ["-vga", "qxl"],
+    # Capture the guest serial console: provision-first-logon.ps1 mirrors
+    # its progress to COM1 so a CI run can show what the guest did even
+    # when SSH never comes up (the Build step cats this file on failure).
+    ["-serial", "file:windows-2025-runner-serial.log"],
   ]
 }
 

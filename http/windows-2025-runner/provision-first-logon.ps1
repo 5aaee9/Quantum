@@ -11,6 +11,20 @@ $ErrorActionPreference = 'Stop'
 
 Start-Transcript -Path 'C:\Windows\Temp\first-logon.log' -Append | Out-Null
 
+# mirror progress to the serial console (COM1) which QEMU captures to
+# windows-2025-runner-serial.log — our only window into the guest when SSH
+# never becomes reachable.
+$script:serialPort = $null
+try {
+    $script:serialPort = New-Object System.IO.Ports.SerialPort COM1
+    $script:serialPort.Open()
+} catch { $script:serialPort = $null }
+function Write-Com1($msg) {
+    Write-Host $msg
+    if ($script:serialPort) { try { $script:serialPort.WriteLine("[first-logon] $msg") } catch {} }
+}
+Write-Com1 'bootstrap starting'
+
 trap {
     Write-Host "ERROR: $_"
     ($_.ScriptStackTrace -split '\r?\n') -replace '^(.*)$', 'ERROR: $1' | Write-Host
@@ -24,6 +38,20 @@ trap {
 [Net.ServicePointManager]::SecurityProtocol = `
     [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
+# --- network profile -------------------------------------------------------
+# QEMU user-net (slirp) delivers packer's inbound connection through the NAT
+# gateway. On a *Public* profile Windows applies stealth-mode inbound drops
+# below the firewall-rule layer, which is exactly the "TCP connects but the
+# SSH banner never arrives" failure. Mark every interface Private and open
+# the port before touching sshd.
+Get-NetConnectionProfile `
+    | Where-Object { $_.NetworkCategory -ne 'DomainAuthenticated' } `
+    | Set-NetConnectionProfile -NetworkCategory Private -ErrorAction SilentlyContinue
+if (-not (Get-NetFirewallRule -DisplayName 'SSH' -ErrorAction SilentlyContinue)) {
+    New-NetFirewallRule -DisplayName 'SSH' -Direction Inbound -Protocol TCP `
+        -LocalPort 22 -Action Allow -Profile Any | Out-Null
+}
+
 # --- OpenSSH -------------------------------------------------------------
 # Install the PowerShell/Win32-OpenSSH release. Binaries land in
 # $openSshHome; config, host keys and logs in $openSshConfigHome.
@@ -35,11 +63,11 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 # uninstall the Windows provided OpenSSH binaries.
 $windowsOpenSshCapabilities = Get-WindowsCapability -Online -Name 'OpenSSH.*' | Where-Object { $_.State -ne 'NotPresent' }
 if ($windowsOpenSshCapabilities) {
-    Write-Host 'Uninstalling the Windows OpenSSH Capabilities...'
+    Write-Com1 'Uninstalling the Windows OpenSSH Capabilities...'
     $windowsOpenSshCapabilities | Remove-WindowsCapability -Online | Out-Null
 }
 
-Write-Host 'Installing the PowerShell/Win32-OpenSSH binaries...'
+Write-Com1 'Installing the PowerShell/Win32-OpenSSH binaries...'
 # see https://github.com/PowerShell/Win32-OpenSSH/releases
 # renovate: datasource=github-releases depName=PowerShell/Win32-OpenSSH
 $openSshVersion = '10.0.0.0p2-Preview'
@@ -51,7 +79,7 @@ while ($true) {
             $localZipPath)
         break
     } catch {
-        Write-Host "openssh download failed ($_), retrying..."
+        Write-Com1 "openssh download failed, retrying..."
         Start-Sleep -Seconds 5
     }
 }
@@ -120,10 +148,10 @@ while ($true) {
 Start-Sleep -Seconds 15
 Stop-Service sshd
 
-Write-Host 'Setting the host file permissions...'
+Write-Com1 'Setting the host file permissions...'
 &"$openSshHome\FixHostFilePermissions.ps1" -Confirm:$false
 
-Write-Host 'Configuring sshd and ssh-agent services...'
+Write-Com1 'Configuring sshd and ssh-agent services...'
 # WARN do not change the startup type from delayed-auto to auto: the later
 #      proved unreliable (sshd accepts the socket then stalls the banner).
 $result = sc.exe config sshd start= delayed-auto
@@ -144,10 +172,10 @@ New-ItemProperty -Path 'HKLM:\SOFTWARE\OpenSSH' -Name DefaultShell `
     -Value 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' `
     -PropertyType String -Force | Out-Null
 
-Write-Host 'Starting the sshd service...'
+Write-Com1 'Starting the sshd service...'
 Start-Service sshd
 
-Write-Host 'Allow firewall access to the sshd service port...'
+Write-Com1 'Firewall rule added; sshd up'
 New-NetFirewallRule -Protocol TCP -LocalPort 22 -Direction Inbound -Action Allow -DisplayName SSH | Out-Null
 
 # --- stop the autologon ---------------------------------------------------
@@ -159,6 +187,16 @@ Set-ItemProperty -Path $winlogon -Name AutoAdminLogon -Value 0
     Remove-ItemProperty -Path $winlogon -Name $_ -ErrorAction SilentlyContinue
 }
 
-Write-Host 'First-logon bootstrap complete; sshd is listening.'
+Write-Com1 'First-logon bootstrap complete; sshd is listening.'
+
+# dump diagnostics to the serial log so a failed SSH connect can be
+# diagnosed from the CI build output.
+try {
+    Write-Com1 ("NET: " + ((Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | ForEach-Object { $_.InterfaceAlias + '=' + $_.IPAddress }) -join ', '))
+    Write-Com1 ("PROFILE: " + ((Get-NetConnectionProfile -ErrorAction SilentlyContinue | ForEach-Object { $_.InterfaceAlias + '=' + $_.NetworkCategory }) -join ', '))
+    Write-Com1 ("SSHD: " + (Get-Service sshd -ErrorAction SilentlyContinue).Status)
+    Write-Com1 ("LISTEN22: " + ((Get-NetTCPConnection -LocalPort 22 -State Listen -ErrorAction SilentlyContinue).Count))
+} catch { Write-Com1 "diag failed: $_" }
+
 Stop-Transcript | Out-Null
 logoff

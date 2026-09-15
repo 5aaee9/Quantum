@@ -77,8 +77,13 @@ jobs:
           ALIST_USERNAME: ${{ secrets.ALIST_USERNAME }}
           ALIST_PASSWORD: ${{ secrets.ALIST_PASSWORD }}
         run: |
+          set -o pipefail
           if [ "${{ matrix.builds.windows }}" = "true" ]; then
-            just build-windows "${{ matrix.builds.codename }}"
+            just build-windows "${{ matrix.builds.codename }}" || {
+              echo '==== guest serial console (COM1) log ====';
+              cat windows-2025-runner-serial.log 2>/dev/null || echo 'no serial log';
+              exit 1;
+            }
           else
             just build "${{ matrix.builds.codename }}"
           fi

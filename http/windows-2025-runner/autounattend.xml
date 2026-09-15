@@ -183,16 +183,22 @@
                     <Path>cmd /c "for %d in (D E F G H) do (if exist %d:\netkvm.inf pnputil /add-driver %d:\*.inf /subdirs /install)"</Path>
                 </RunSynchronousCommand>
                 <!--
-                    QEMU slirp hostfwd delivers inbound from the NAT gateway; a
-                    Public profile can drop it before first logon, so open
-                    inbound TCP/22 here and disable the firewall for the build.
+                    QEMU slirp hostfwd delivers inbound from the NAT gateway.
+                    On a Public network profile Windows drops those inbound
+                    connections below the firewall-rule layer, so mark every
+                    interface Private AND disable the firewall for the build.
+                    99-cleanup.ps1 turns the firewall back on.
                 -->
                 <RunSynchronousCommand wcm:action="add">
                     <Order>2</Order>
-                    <Path>netsh advfirewall set allprofiles state off</Path>
+                    <Path>powershell -Command "Get-NetConnectionProfile | Set-NetConnectionProfile -NetworkCategory Private"</Path>
                 </RunSynchronousCommand>
                 <RunSynchronousCommand wcm:action="add">
                     <Order>3</Order>
+                    <Path>netsh advfirewall set allprofiles state off</Path>
+                </RunSynchronousCommand>
+                <RunSynchronousCommand wcm:action="add">
+                    <Order>4</Order>
                     <Path>netsh advfirewall firewall add rule name=SSH dir=in action=allow protocol=TCP localport=22</Path>
                 </RunSynchronousCommand>
             </RunSynchronous>
