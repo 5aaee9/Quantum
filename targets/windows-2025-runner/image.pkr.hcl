@@ -32,9 +32,15 @@ source "qemu" "windows-2025-runner" {
 
   headless          = var.headless
 
-  # UEFI "Press any key to boot from CD" prompt.
-  boot_wait         = var.boot_wait
-  boot_command      = ["<space><wait><space><wait><space><wait><space><wait><space><wait><space><wait><space><wait><space><wait><space><wait><space><wait>"]
+  # UEFI "Press any key to boot from CD or DVD" prompt. The prompt only
+  # stays up for a few seconds right after OVMF hands off to bootx64.efi,
+  # so the keypresses must land early — unlike the Linux targets (which
+  # wait ~10s to reach a grub menu), Windows needs the key during that
+  # brief window. boot_wait is intentionally NOT the shared var.boot_wait
+  # (10s is already past the prompt); send the Up-arrow train starting
+  # ~1s in so several presses straddle the window.
+  boot_wait         = "1s"
+  boot_command      = ["<up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait>"]
 
   # Single provision ISO at E: (the second CD-ROM): autounattend.xml +
   # the virtio-win drivers + QEMU guest-tools + the first-logon script.
