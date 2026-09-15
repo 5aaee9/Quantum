@@ -105,10 +105,23 @@ jobs:
           if [ $RC -ne 0 ]; then
             echo '==== guest serial console (COM1) log ===='
             cat windows-2025-runner-serial.log 2>/dev/null || echo 'no serial log'
-            echo '==== last guest screendumps (ppm, base64) ===='
-            for f in $(ls -t /tmp/winscreens/*.ppm 2>/dev/null | head -3); do
-              echo "--- $f ---"; base64 "$f" | head -c 200000; echo
+            # convert the last screendumps to png so they can be inspected
+            # (ppm -> png via imagemagick if available)
+            mkdir -p windows-screens
+            i=0
+            for f in $(ls -t /tmp/winscreens/*.ppm 2>/dev/null | head -6); do
+              sudo cp "$f" "windows-screens/guest-$i.ppm" 2>/dev/null || cp "$f" "windows-screens/guest-$i.ppm" 2>/dev/null
+              i=$((i+1))
             done
             exit $RC
           fi
           bash .github/scripts/upload-alist.sh "${{ matrix.builds.codename }}.qcow2" "/Local/VirtualMachineImages"
+
+      - name: Upload windows guest screenshots on failure
+        if: failure() && matrix.builds.windows
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-2025-runner-screens
+          path: windows-screens/
+          retention-days: 7
+          if-no-files-found: ignore
