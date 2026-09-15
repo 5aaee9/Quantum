@@ -5,25 +5,41 @@
 #
 # Mirrors rgl/windows-vagrant provision-openssh.ps1 (proven on QEMU/KVM):
 # https://github.com/rgl/windows-vagrant
+# Write a marker to COM1 as the *very first* statement — before anything
+# that can fail — so the serial log proves the script actually ran. QEMU
+# captures COM1 to windows-2025-runner-serial.log.
+$script:com1 = $null
+foreach ($m in 'file','serialport') {
+    try {
+        if ($m -eq 'file') {
+            $script:com1 = [System.IO.File]::OpenWrite('\\.\COM1')
+        } else {
+            $script:com1 = New-Object System.IO.Ports.SerialPort COM1
+            $script:com1.Open()
+        }
+        if ($script:com1) { break }
+    } catch { $script:com1 = $null }
+}
+function Write-Com1($msg) {
+    Write-Host $msg
+    if (-not $script:com1) { return }
+    try {
+        $line = "[first-logon] $msg`r`n"
+        if ($script:com1 -is [System.IO.FileStream]) {
+            $b = [Text.Encoding]::ASCII.GetBytes($line)
+            $script:com1.Write($b, 0, $b.Length); $script:com1.Flush()
+        } else {
+            $script:com1.WriteLine("[first-logon] $msg")
+        }
+    } catch {}
+}
+Write-Com1 'bootstrap starting'
+
 Set-StrictMode -Version Latest
 $ProgressPreference = 'SilentlyContinue'
 $ErrorActionPreference = 'Stop'
 
 Start-Transcript -Path 'C:\Windows\Temp\first-logon.log' -Append | Out-Null
-
-# mirror progress to the serial console (COM1) which QEMU captures to
-# windows-2025-runner-serial.log — our only window into the guest when SSH
-# never becomes reachable.
-$script:serialPort = $null
-try {
-    $script:serialPort = New-Object System.IO.Ports.SerialPort COM1
-    $script:serialPort.Open()
-} catch { $script:serialPort = $null }
-function Write-Com1($msg) {
-    Write-Host $msg
-    if ($script:serialPort) { try { $script:serialPort.WriteLine("[first-logon] $msg") } catch {} }
-}
-Write-Com1 'bootstrap starting'
 
 trap {
     Write-Host "ERROR: $_"
