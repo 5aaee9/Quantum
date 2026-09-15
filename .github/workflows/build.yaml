@@ -69,7 +69,7 @@ jobs:
       - name: Install deps
         run: |
           sudo apt-get update -y
-          sudo apt-get install qemu-utils qemu-kvm libarchive-tools xorriso -y
+          sudo apt-get install qemu-utils qemu-kvm libarchive-tools xorriso socat -y
 
       - name: Build
         env:
@@ -78,13 +78,37 @@ jobs:
           ALIST_PASSWORD: ${{ secrets.ALIST_PASSWORD }}
         run: |
           set -o pipefail
-          if [ "${{ matrix.builds.windows }}" = "true" ]; then
-            just build-windows "${{ matrix.builds.codename }}" || {
-              echo '==== guest serial console (COM1) log ====';
-              cat windows-2025-runner-serial.log 2>/dev/null || echo 'no serial log';
-              exit 1;
-            }
-          else
+          if [ "${{ matrix.builds.windows }}" != "true" ]; then
             just build "${{ matrix.builds.codename }}"
+            bash .github/scripts/upload-alist.sh "${{ matrix.builds.codename }}.qcow2" "/Local/VirtualMachineImages"
+            exit 0
+          fi
+
+          # windows build: run packer in the background and snapshot the
+          # guest display every 60s so a failed run still shows which
+          # screen the guest was stuck on.
+          mkdir -p /tmp/winscreens
+          (
+            while true; do
+              if [ -S windows-2025-runner-monitor.sock ]; then
+                printf 'screendump /tmp/winscreens/%s.ppm\n' "$(date +%s)" | sudo socat - UNIX-CONNECT:windows-2025-runner-monitor.sock 2>/dev/null
+              fi
+              sleep 60
+            done
+          ) &
+          SNAP_PID=$!
+          set +e
+          just build-windows "${{ matrix.builds.codename }}"
+          RC=$?
+          kill $SNAP_PID 2>/dev/null
+          set -e
+          if [ $RC -ne 0 ]; then
+            echo '==== guest serial console (COM1) log ===='
+            cat windows-2025-runner-serial.log 2>/dev/null || echo 'no serial log'
+            echo '==== last guest screendumps (ppm, base64) ===='
+            for f in $(ls -t /tmp/winscreens/*.ppm 2>/dev/null | head -3); do
+              echo "--- $f ---"; base64 "$f" | head -c 200000; echo
+            done
+            exit $RC
           fi
           bash .github/scripts/upload-alist.sh "${{ matrix.builds.codename }}.qcow2" "/Local/VirtualMachineImages"

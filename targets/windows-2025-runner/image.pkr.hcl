@@ -88,10 +88,12 @@ source "qemu" "windows-2025-runner" {
     ["-cpu", "host,hv-passthrough"],
     ["-rtc", "base=localtime,clock=host"],
     ["-vga", "qxl"],
-    # Capture the guest serial console: provision-first-logon.ps1 mirrors
-    # its progress to COM1 so a CI run can show what the guest did even
-    # when SSH never comes up (the Build step cats this file on failure).
+    # Capture the guest serial console (OVMF boot log lands here) and a
+    # QEMU monitor socket so the Build step can grab a screendump of the
+    # guest's display on failure — shows exactly which screen it's stuck
+    # on (OOBE prompt, login, error dialog, etc).
     ["-serial", "file:windows-2025-runner-serial.log"],
+    ["-monitor", "unix:windows-2025-runner-monitor.sock,server,nowait"],
   ]
 }
 
