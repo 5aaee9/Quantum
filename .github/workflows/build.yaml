@@ -105,6 +105,9 @@ jobs:
           if [ $RC -ne 0 ]; then
             echo '==== guest serial console (COM1) log ===='
             cat windows-2025-runner-serial.log 2>/dev/null || echo 'no serial log'
+            echo '==== guest status floppy ===='
+            sudo mdir -i windows-2025-runner-status.img :: 2>/dev/null
+            sudo mtype -i windows-2025-runner-status.img ::STATUS.TXT 2>/dev/null || echo 'no status file'
             # convert the last screendumps to png so they can be inspected
             # (ppm -> png via imagemagick if available)
             mkdir -p windows-screens

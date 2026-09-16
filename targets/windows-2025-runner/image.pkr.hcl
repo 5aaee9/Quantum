@@ -94,6 +94,11 @@ source "qemu" "windows-2025-runner" {
     # on (OOBE prompt, login, error dialog, etc).
     ["-serial", "file:windows-2025-runner-serial.log"],
     ["-monitor", "unix:windows-2025-runner-monitor.sock,server,nowait"],
+    # A writable FAT12 floppy the guest can drop status/diagnostics into
+    # (first-logon writes guest state here). The Build step reads it with
+    # mtools on failure — a reliable observability channel that does not
+    # depend on COM1 reaching QEMU's serial, which it apparently doesn't.
+    ["-drive", "if=floppy,format=raw,file=windows-2025-runner-status.img"],
   ]
 }
 

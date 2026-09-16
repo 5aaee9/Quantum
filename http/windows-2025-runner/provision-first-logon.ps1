@@ -45,6 +45,11 @@ trap {
     Write-Host "ERROR: $_"
     ($_.ScriptStackTrace -split '\r?\n') -replace '^(.*)$', 'ERROR: $1' | Write-Host
     ($_.Exception.ToString() -split '\r?\n') -replace '^(.*)$', 'ERROR EXCEPTION: $1' | Write-Host
+    try {
+        Add-Content -Path 'A:\STATUS.TXT' -Value "TRAP ERROR: $($_.Exception.Message)"
+        Add-Content -Path 'A:\STATUS.TXT' -Value "TRAP AT: $($_.InvocationInfo.PositionMessage)"
+        Add-Content -Path 'A:\STATUS.TXT' -Value 'STATUS: failed'
+    } catch {}
     Stop-Transcript | Out-Null
     # leave the VM up for a while so a failed run can be inspected over VNC.
     Start-Sleep -Seconds (60*60)
@@ -205,14 +210,23 @@ Set-ItemProperty -Path $winlogon -Name AutoAdminLogon -Value 0
 
 Write-Com1 'First-logon bootstrap complete; sshd is listening.'
 
-# dump diagnostics to the serial log so a failed SSH connect can be
-# diagnosed from the CI build output.
+# dump diagnostics to the writable status floppy (A:) AND the serial log
+# so a failed SSH connect can be diagnosed from the CI build output.
+function Write-Status($text) {
+    Write-Com1 $text
+    try { Add-Content -Path 'A:\STATUS.TXT' -Value $text -ErrorAction Stop } catch {}
+}
 try {
-    Write-Com1 ("NET: " + ((Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | ForEach-Object { $_.InterfaceAlias + '=' + $_.IPAddress }) -join ', '))
-    Write-Com1 ("PROFILE: " + ((Get-NetConnectionProfile -ErrorAction SilentlyContinue | ForEach-Object { $_.InterfaceAlias + '=' + $_.NetworkCategory }) -join ', '))
-    Write-Com1 ("SSHD: " + (Get-Service sshd -ErrorAction SilentlyContinue).Status)
-    Write-Com1 ("LISTEN22: " + ((Get-NetTCPConnection -LocalPort 22 -State Listen -ErrorAction SilentlyContinue).Count))
-} catch { Write-Com1 "diag failed: $_" }
+    Write-Status ("NET: " + ((Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | ForEach-Object { $_.InterfaceAlias + '=' + $_.IPAddress }) -join ', '))
+    Write-Status ("PROFILE: " + ((Get-NetConnectionProfile -ErrorAction SilentlyContinue | ForEach-Object { $_.InterfaceAlias + '=' + $_.NetworkCategory }) -join ', '))
+    Write-Status ("DEFGW: " + ((Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | ForEach-Object { $_.NextHop }) -join ', '))
+    Write-Status ("SSHD: " + (Get-Service sshd -ErrorAction SilentlyContinue).Status)
+    Write-Status ("LISTEN22: " + ((Get-NetTCPConnection -LocalPort 22 -State Listen -ErrorAction SilentlyContinue).Count))
+    Write-Status ("LISTEN22addr: " + ((Get-NetTCPConnection -LocalPort 22 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { $_.LocalAddress }) -join ','))
+    Write-Status ("FW: " + ((Get-NetFirewallProfile -ErrorAction SilentlyContinue | ForEach-Object { $_.Name + '=' + $_.Enabled }) -join ', '))
+    Write-Status ("DNS-test: " + ((Test-NetConnection -ComputerName github.com -Port 443 -WarningAction SilentlyContinue).TcpTestSucceeded))
+    Write-Status 'STATUS: complete'
+} catch { Write-Status "diag failed: $_" }
 
 Stop-Transcript | Out-Null
 logoff

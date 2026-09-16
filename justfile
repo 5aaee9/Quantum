@@ -15,6 +15,10 @@ build-windows VARIANT: fetch-windows-drivers
   sudo packer init targets/{{VARIANT}}
   sudo rm -rf outputs/{{VARIANT}} {{VARIANT}}.qcow2
 
+  # writable FAT12 status floppy the guest drops diagnostics into.
+  truncate -s 1474560 {{VARIANT}}-status.img
+  (mformat -i {{VARIANT}}-status.img -f 1440 :: || sudo mkfs.vfat -F 12 {{VARIANT}}-status.img) >/dev/null 2>&1 || true
+
   sudo packer build {{ci-args}} \
     targets/{{VARIANT}}
 
