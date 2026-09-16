@@ -69,7 +69,7 @@ jobs:
       - name: Install deps
         run: |
           sudo apt-get update -y
-          sudo apt-get install qemu-utils qemu-kvm libarchive-tools xorriso socat -y
+          sudo apt-get install qemu-utils qemu-kvm libarchive-tools xorriso socat mtools dosfstools -y
 
       - name: Build
         env:
