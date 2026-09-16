@@ -4,3 +4,10 @@ outputs/
 result-fd
 .omx
 drivers/
+
+# windows build diagnostics artifacts
+windows-2025-runner-serial.log
+windows-2025-runner-status.img
+windows-2025-runner-monitor.sock
+guest-status.log
+windows-screens/
