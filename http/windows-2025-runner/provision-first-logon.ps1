@@ -57,6 +57,9 @@ trap {
     Write-Host "ERROR: $_"
     ($_.ScriptStackTrace -split '\r?\n') -replace '^(.*)$', 'ERROR: $1' | Write-Host
     ($_.Exception.ToString() -split '\r?\n') -replace '^(.*)$', 'ERROR EXCEPTION: $1' | Write-Host
+    Write-Status ("TRAP ERROR: " + $_.Exception.Message)
+    Write-Status ("TRAP AT: " + $_.InvocationInfo.PositionMessage)
+    Write-Status 'STATUS: failed'
     try {
         Add-Content -Path 'A:\STATUS.TXT' -Value "TRAP ERROR: $($_.Exception.Message)"
         Add-Content -Path 'A:\STATUS.TXT' -Value "TRAP AT: $($_.InvocationInfo.PositionMessage)"
