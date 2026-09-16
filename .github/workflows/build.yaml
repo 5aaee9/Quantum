@@ -85,10 +85,12 @@ jobs:
           fi
 
           # host listener: the guest reports diagnostics over slirp's
-          # 10.0.2.2 gateway to :8080; append each request (incl. the
-          # 'GET /?s=...' query carrying the status line) to a log file.
-          (sudo sh -c 'while true; do socat TCP-LISTEN:8080,reuseaddr - >>/tmp/guest-status.log 2>/dev/null; done' &) || true
-          touch /tmp/guest-status.log
+          # 10.0.2.2 gateway to :8080. Capture every request (incl. the
+          # 'GET /?s=...' status query) to a log in the workspace (a path
+          # the runner user can definitely write). 8080 > 1024, no sudo.
+          STATUS_LOG="$PWD/guest-status.log"
+          touch "$STATUS_LOG"
+          (while true; do nc -l 8080 >>"$STATUS_LOG" 2>/dev/null; done) &
 
           # windows build: run packer in the background and snapshot the
           # guest display every 60s so a failed run still shows which
@@ -112,7 +114,7 @@ jobs:
             echo '==== guest serial console (COM1) log ===='
             cat windows-2025-runner-serial.log 2>/dev/null || echo 'no serial log'
             echo '==== guest status (host listener on 10.0.2.2:8080) ===='
-            sudo grep -oE 'GET /\?s=[^ ]+' /tmp/guest-status.log 2>/dev/null | sed 's|GET /?s=||' | while read -r l; do python3 -c "import urllib.parse,sys;print(urllib.parse.unquote(sys.argv[1]))" "$l"; done || sudo cat /tmp/guest-status.log 2>/dev/null
+            grep -oE 'GET /\?s=[^ ]+' guest-status.log 2>/dev/null | sed 's|GET /?s=||' | while read -r l; do python3 -c "import urllib.parse,sys;print(urllib.parse.unquote(sys.argv[1]))" "$l"; done || cat guest-status.log 2>/dev/null
             echo '==== guest status floppy ===='
             sudo mdir -i windows-2025-runner-status.img :: 2>/dev/null
             sudo mtype -i windows-2025-runner-status.img ::STATUS.TXT 2>/dev/null || echo 'no status file'
