@@ -33,7 +33,19 @@ function Write-Com1($msg) {
         }
     } catch {}
 }
+
+# report a line to the host via slirp's 10.0.2.2 gateway: the CI runner
+# listens on :8080 and logs every request. Works even when COM1/A: don't.
+function Write-Status($text) {
+    Write-Com1 $text
+    try { Add-Content -Path 'A:\STATUS.TXT' -Value $text -ErrorAction Stop } catch {}
+    try {
+        $q = [uri]::EscapeDataString($text)
+        Invoke-WebRequest -Uri "http://10.0.2.2:8080/?s=$q" -UseBasicParsing -TimeoutSec 5 | Out-Null
+    } catch {}
+}
 Write-Com1 'bootstrap starting'
+Write-Status 'SCRIPT-STARTED'
 
 Set-StrictMode -Version Latest
 $ProgressPreference = 'SilentlyContinue'
@@ -82,13 +94,14 @@ $openSshConfigHome = 'C:\ProgramData\ssh'
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
 # uninstall the Windows provided OpenSSH binaries.
+Write-Status 'STEP: enumerate-openssh-capabilities'
 $windowsOpenSshCapabilities = Get-WindowsCapability -Online -Name 'OpenSSH.*' | Where-Object { $_.State -ne 'NotPresent' }
 if ($windowsOpenSshCapabilities) {
-    Write-Com1 'Uninstalling the Windows OpenSSH Capabilities...'
+    Write-Status 'STEP: removing-windows-openssh'
     $windowsOpenSshCapabilities | Remove-WindowsCapability -Online | Out-Null
 }
 
-Write-Com1 'Installing the PowerShell/Win32-OpenSSH binaries...'
+Write-Status 'STEP: download-openssh-zip'
 # see https://github.com/PowerShell/Win32-OpenSSH/releases
 # renovate: datasource=github-releases depName=PowerShell/Win32-OpenSSH
 $openSshVersion = '10.0.0.0p2-Preview'
@@ -193,8 +206,10 @@ New-ItemProperty -Path 'HKLM:\SOFTWARE\OpenSSH' -Name DefaultShell `
     -Value 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' `
     -PropertyType String -Force | Out-Null
 
+Write-Status 'STEP: start-sshd'
 Write-Com1 'Starting the sshd service...'
 Start-Service sshd
+Write-Status 'STEP: sshd-started'
 
 Write-Com1 'Firewall rule added; sshd up'
 New-NetFirewallRule -Protocol TCP -LocalPort 22 -Direction Inbound -Action Allow -DisplayName SSH | Out-Null
@@ -210,11 +225,17 @@ Set-ItemProperty -Path $winlogon -Name AutoAdminLogon -Value 0
 
 Write-Com1 'First-logon bootstrap complete; sshd is listening.'
 
-# dump diagnostics to the writable status floppy (A:) AND the serial log
-# so a failed SSH connect can be diagnosed from the CI build output.
+# dump diagnostics to the serial log AND to the host over slirp's
+# always-present 10.0.2.2 gateway — the CI runner listens on :8080 and
+# logs every request, a channel that works regardless of whether A:/COM1
+# are wired up. A failed SSH connect can then be diagnosed from CI output.
 function Write-Status($text) {
     Write-Com1 $text
     try { Add-Content -Path 'A:\STATUS.TXT' -Value $text -ErrorAction Stop } catch {}
+    try {
+        $q = [uri]::EscapeDataString($text)
+        Invoke-WebRequest -Uri "http://10.0.2.2:8080/?s=$q" -UseBasicParsing -TimeoutSec 5 | Out-Null
+    } catch {}
 }
 try {
     Write-Status ("NET: " + ((Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | ForEach-Object { $_.InterfaceAlias + '=' + $_.IPAddress }) -join ', '))
