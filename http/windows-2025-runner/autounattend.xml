@@ -209,8 +209,14 @@
                 </RunSynchronousCommand>
             </RunSynchronous>
         </component>
-    </settings>
-    <settings pass="offlineServicing">
+        <!--
+            Disable UAC for the build. Without this the packer admin account
+            gets a consent prompt the moment any provisioner touches a
+            privileged setting (netsh, firewall, service control), and a
+            headless build has nobody to click "Yes" — it just hangs. The
+            offlineServicing pass does NOT apply at runtime, so it has to be
+            set in specialize. 99-cleanup.ps1 can re-enable it if needed.
+        -->
         <component name="Microsoft-Windows-LUA-Settings" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
             <EnableLUA>false</EnableLUA>
         </component>
