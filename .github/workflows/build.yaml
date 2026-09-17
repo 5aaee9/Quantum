@@ -100,6 +100,9 @@ jobs:
             while true; do
               if [ -S windows-2025-runner-monitor.sock ]; then
                 printf 'screendump /tmp/winscreens/%s.ppm\n' "$(date +%s)" | sudo socat - UNIX-CONNECT:windows-2025-runner-monitor.sock 2>/dev/null
+                # query NIC/link + pci state; -t holds the socket open long
+                # enough to read the monitor's reply into net.txt
+                { echo 'info network'; echo 'info pci'; sleep 1; } | sudo socat -t 3 - UNIX-CONNECT:windows-2025-runner-monitor.sock >> /tmp/winscreens/net.txt 2>/dev/null
               fi
               sleep 60
             done
@@ -117,6 +120,8 @@ jobs:
             cat windows-2025-runner-serial.log 2>/dev/null || echo 'no serial log'
             echo '==== guest status (host listener on 10.0.2.2:8080) ===='
             grep -oE 'GET /\?s=[^ ]+' guest-status.log 2>/dev/null | sed 's|GET /?s=||' | while read -r l; do python3 -c "import urllib.parse,sys;print(urllib.parse.unquote(sys.argv[1]))" "$l"; done || cat guest-status.log 2>/dev/null
+            echo '==== qemu guest network/pci state ===='
+            tail -60 /tmp/winscreens/net.txt 2>/dev/null || echo 'no monitor net info'
             echo '==== guest status floppy ===='
             sudo mdir -i windows-2025-runner-status.img :: 2>/dev/null
             sudo mtype -i windows-2025-runner-status.img ::STATUS.TXT 2>/dev/null || echo 'no status file'
