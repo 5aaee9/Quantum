@@ -54,8 +54,8 @@ try {
     $up = Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object Status -eq 'Up'
     if (-not $up) {
         foreach ($d in 'D','E','F','G','H') {
-            if (Test-Path "$d:\netkvm.inf") {
-                & pnputil /add-driver "$d:\*.inf" /subdirs /install 2>$null | Out-Null
+            if (Test-Path "${d}:\netkvm.inf") {
+                & pnputil /add-driver "${d}:\*.inf" /subdirs /install 2>$null | Out-Null
             }
         }
         Start-Sleep -Seconds 8
