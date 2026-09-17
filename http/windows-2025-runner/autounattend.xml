@@ -169,6 +169,28 @@
         -->
         <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
             <RunSynchronous>
+                <!--
+                    Kill UAC prompts for the whole build. FirstLogonCommands
+                    and the OpenSSH install-sshd.ps1 run netsh / service
+                    control which would otherwise pop a consent dialog with
+                    nobody to click "Yes" — that is exactly the hang the
+                    screendumps showed. EnableLUA=0 + ConsentPromptBehavior=0
+                    means even a non-elevated shell never prompts.
+                -->
+                <!-- each reg add as its own command avoids nested-quote
+                     parsing problems inside a single cmd /c "..." line. -->
+                <RunSynchronousCommand wcm:action="add">
+                    <Order>0</Order>
+                    <Path>reg add HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System /v EnableLUA /t REG_DWORD /d 0 /f</Path>
+                </RunSynchronousCommand>
+                <RunSynchronousCommand wcm:action="add">
+                    <Order>0</Order>
+                    <Path>reg add HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System /v ConsentPromptBehaviorAdmin /t REG_DWORD /d 0 /f</Path>
+                </RunSynchronousCommand>
+                <RunSynchronousCommand wcm:action="add">
+                    <Order>0</Order>
+                    <Path>reg add HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System /v PromptOnSecureDesktop /t REG_DWORD /d 0 /f</Path>
+                </RunSynchronousCommand>
                 <!-- prove COM1 is reachable from inside setup; lands in the
                      serial log QEMU captures. -->
                 <RunSynchronousCommand wcm:action="add">
