@@ -77,6 +77,14 @@ try {
     Start-Sleep -Seconds 5
     $ip = (Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.IPAddress -notlike '169.254*' } | Select-Object -First 1).IPAddress
     Write-Status ("SCRIPT-STARTED adapters=" + ((Get-NetAdapter -ErrorAction SilentlyContinue | ForEach-Object { $_.Name + ':' + $_.Status }) -join ',') + " ip=$ip")
+    # also paint the network state on the console so a VNC/monitor
+    # screendump shows it even when outbound pings can't reach the host.
+    Write-Host '==================== NETSTATE ===================='
+    Get-NetAdapter -ErrorAction SilentlyContinue | Format-Table Name,Status,InterfaceDescription -Auto | Out-String | Write-Host
+    Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | Format-Table InterfaceAlias,IPAddress -Auto | Out-String | Write-Host
+    Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Format-Table ifIndex,NextHop -Auto | Out-String | Write-Host
+    Get-PnpDevice -Class Net -ErrorAction SilentlyContinue | Format-Table Status,FriendlyName -Auto | Out-String | Write-Host
+    Write-Host '=================================================='
 } catch { Write-Status ("SCRIPT-STARTED netcheck-err " + $_.Exception.Message) }
 
 Set-StrictMode -Version Latest
