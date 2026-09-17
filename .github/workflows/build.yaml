@@ -106,15 +106,13 @@ jobs:
           ) &
           SNAP_PID=$!
           set +e
-          # PACKER_LOG_PATH captures QEMU's stderr so a failed VM launch
-          # shows the real reason (bad qemuarg, missing drive, etc).
-          PACKER_LOG=1 PACKER_LOG_PATH=packer-windows.log just build-windows "${{ matrix.builds.codename }}"
+          just build-windows "${{ matrix.builds.codename }}"
           RC=$?
           kill $SNAP_PID 2>/dev/null
           set -e
           if [ $RC -ne 0 ]; then
             echo '==== qemu launch errors ===='
-            grep -iE 'qemu.*stderr|error launching|failed to start|accel|cannot|denied|invalid|drive|floppy|monitor' packer-windows.log 2>/dev/null | tail -40
+            sudo grep -iE 'qemu.*stderr|Executing.*qemu|error launching|failed to start|accel|cannot|denied|invalid|drive0|floppy|monitor|e1000|virtio' packer-windows.log 2>/dev/null | tail -50
             echo '==== guest serial console (COM1) log ===='
             cat windows-2025-runner-serial.log 2>/dev/null || echo 'no serial log'
             echo '==== guest status (host listener on 10.0.2.2:8080) ===='

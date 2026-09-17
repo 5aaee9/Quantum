@@ -19,7 +19,9 @@ build-windows VARIANT: fetch-windows-drivers
   truncate -s 1474560 {{VARIANT}}-status.img
   (mformat -i {{VARIANT}}-status.img -f 1440 :: || sudo mkfs.vfat -F 12 {{VARIANT}}-status.img) >/dev/null 2>&1 || true
 
-  sudo packer build {{ci-args}} \
+  # VAR=val after sudo passes the packer debug log env through sudo so a
+  # failed VM launch can be read back from packer-windows.log.
+  sudo PACKER_LOG=1 PACKER_LOG_PATH="$PWD/packer-windows.log" packer build {{ci-args}} \
     targets/{{VARIANT}}
 
   qemu-img convert -O qcow2 -c outputs/{{VARIANT}}/packer-{{VARIANT}} {{VARIANT}}.qcow2
