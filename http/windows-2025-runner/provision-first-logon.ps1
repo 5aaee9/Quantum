@@ -53,13 +53,28 @@ Write-Com1 'bootstrap starting'
 try {
     $up = Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object Status -eq 'Up'
     if (-not $up) {
+        # stage every .inf on the provision CD (NetKVM et al)
         foreach ($d in 'D','E','F','G','H') {
             if (Test-Path "${d}:\netkvm.inf") {
                 & pnputil /add-driver "${d}:\*.inf" /subdirs /install 2>$null | Out-Null
             }
         }
         Start-Sleep -Seconds 8
+        # still nothing -> run the full virtio-win guest-tools installer,
+        # which *binds* the drivers (pnputil only stages them into the
+        # store; the NIC can stay driverless until a rescan/enumeration).
+        $up = Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object Status -eq 'Up'
+        if (-not $up) {
+            foreach ($d in 'D','E','F','G','H') {
+                $gt = "${d}:\virtio-win-guest-tools.exe"
+                if (Test-Path $gt) { Start-Process $gt -ArgumentList '/install','/quiet','/norestart' -Wait }
+            }
+            Start-Sleep -Seconds 10
+        }
     }
+    # force a DHCP renew so the NIC picks up slirp's 10.0.2.x address now.
+    Get-NetAdapter -ErrorAction SilentlyContinue | ForEach-Object { try { & ipconfig /renew $_.Name 2>$null | Out-Null } catch {} }
+    Start-Sleep -Seconds 5
     $ip = (Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.IPAddress -notlike '169.254*' } | Select-Object -First 1).IPAddress
     Write-Status ("SCRIPT-STARTED adapters=" + ((Get-NetAdapter -ErrorAction SilentlyContinue | ForEach-Object { $_.Name + ':' + $_.Status }) -join ',') + " ip=$ip")
 } catch { Write-Status ("SCRIPT-STARTED netcheck-err " + $_.Exception.Message) }
