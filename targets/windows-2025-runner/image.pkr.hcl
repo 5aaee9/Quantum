@@ -98,11 +98,11 @@ source "qemu" "windows-2025-runner" {
     # on (OOBE prompt, login, error dialog, etc).
     ["-serial", "file:windows-2025-runner-serial.log"],
     ["-monitor", "unix:windows-2025-runner-monitor.sock,server,nowait"],
-    # A writable FAT12 floppy the guest can drop status/diagnostics into
-    # (first-logon writes guest state here). The Build step reads it with
-    # mtools on failure — a reliable observability channel that does not
-    # depend on COM1 reaching QEMU's serial, which it apparently doesn't.
-    ["-drive", "if=floppy,format=raw,file=windows-2025-runner-status.img"],
+    # NOTE: do NOT add a -drive entry here. A `-drive` in qemuargs makes
+    # packer drop *all* of its own generated -drive args (boot disk, the
+    # Windows install ISO, the provision CD, and the EFI pflash), so QEMU
+    # fails to launch with "can't find value 'drive0'". Diagnostics go to
+    # the host over slirp's 10.0.2.2:8080 listener instead.
   ]
 }
 
