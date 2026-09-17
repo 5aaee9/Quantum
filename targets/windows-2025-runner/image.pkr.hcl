@@ -23,11 +23,12 @@ source "qemu" "windows-2025-runner" {
   memory            = var.memory
   disk_size         = var.disk_size
   disk_interface    = "virtio-scsi"
-  # virtio-net-pci (explicit PCIe form — plain 'e1000' is a legacy PCI
-  # device that won't plug into q35's PCIe root and made QEMU 8.2 refuse to
-  # launch). The NetKVM driver is staged on the provision ISO and injected
-  # via DriverPaths/pnputil, same mechanism that makes virtio-scsi boot.
-  net_device        = "virtio-net-pci"
+  # 'virtio-net' (transitional) — exactly what rgl/windows-vagrant uses and
+  # what the NetKVM driver binds to on q35. ('e1000' is legacy-PCI and made
+  # QEMU 8.2 refuse to launch on q35; 'virtio-net-pci' is modern-only.)
+  # NetKVM is staged on the provision ISO and injected via DriverPaths,
+  # same mechanism that makes virtio-scsi boot.
+  net_device        = "virtio-net"
   format            = "qcow2"
 
   efi_boot          = true
