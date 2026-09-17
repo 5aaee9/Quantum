@@ -85,6 +85,9 @@ try {
     Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Format-Table ifIndex,NextHop -Auto | Out-String | Write-Host
     Get-PnpDevice -Class Net -ErrorAction SilentlyContinue | Format-Table Status,FriendlyName -Auto | Out-String | Write-Host
     Write-Host '=================================================='
+    # hold the NETSTATE block on screen for ~90s so a screendump catches it
+    # before the (network-bound) OpenSSH download step runs.
+    Start-Sleep -Seconds 90
 } catch { Write-Status ("SCRIPT-STARTED netcheck-err " + $_.Exception.Message) }
 
 Set-StrictMode -Version Latest
