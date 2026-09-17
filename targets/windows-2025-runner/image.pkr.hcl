@@ -23,13 +23,11 @@ source "qemu" "windows-2025-runner" {
   memory            = var.memory
   disk_size         = var.disk_size
   disk_interface    = "virtio-scsi"
-  # e1000 for the NIC: Windows Server ships an inbox driver for it, so the
-  # guest has working networking the moment Setup finishes — no reliance
-  # on the virtio NetKVM driver getting bound, which is what we suspect is
-  # leaving the guest with no NIC (no IP, no SSH, no outbound). The disk
-  # stays on virtio-scsi (boot-critical, handled by DriverPaths/pnputil);
-  # virtio-net is faster but only once the driver is confirmed working.
-  net_device        = "e1000"
+  # virtio-net-pci (explicit PCIe form — plain 'e1000' is a legacy PCI
+  # device that won't plug into q35's PCIe root and made QEMU 8.2 refuse to
+  # launch). The NetKVM driver is staged on the provision ISO and injected
+  # via DriverPaths/pnputil, same mechanism that makes virtio-scsi boot.
+  net_device        = "virtio-net-pci"
   format            = "qcow2"
 
   efi_boot          = true
