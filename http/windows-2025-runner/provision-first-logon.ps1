@@ -81,6 +81,11 @@ try {
         & pnputil /scan-devices 2>$null | Out-Null
         Start-Sleep -Seconds 12
     }
+    # Kill the firewall entirely — on a fresh eval install the NIC lands in
+    # a restrictive profile whose inbound rules can swallow the DHCP OFFER
+    # (the guest sends DISCOVER, never sees the reply, falls to APIPA).
+    try { Set-NetFirewallProfile -All -Enabled False -ErrorAction SilentlyContinue } catch {}
+    try { & netsh advfirewall set allprofiles state off 2>$null | Out-Null } catch {}
     # Make sure the DHCP client service is actually running — if it's
     # stopped/disabled the adapter can never get a lease no matter what.
     try { Set-Service -Name Dhcp -StartupType Automatic -ErrorAction SilentlyContinue } catch {}
