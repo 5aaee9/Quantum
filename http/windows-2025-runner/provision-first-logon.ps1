@@ -85,6 +85,14 @@ try {
     # stopped/disabled the adapter can never get a lease no matter what.
     try { Set-Service -Name Dhcp -StartupType Automatic -ErrorAction SilentlyContinue } catch {}
     try { if ((Get-Service Dhcp).Status -ne 'Running') { Restart-Service Dhcp -Force -ErrorAction Stop } } catch {}
+    # Force DHCP back ON at the interface level — a stray static config or
+    # the netsh fallback can leave 'DHCP Enabled = No' on the adapter, in
+    # which case it sits on APIPA forever and never asks slirp for a lease.
+    Get-NetAdapter -ErrorAction SilentlyContinue | ForEach-Object {
+        try { Set-NetIPInterface -InterfaceIndex $_.ifIndex -Dhcp Enabled -ErrorAction Stop } catch {}
+        try { & netsh interface ip set address name="$($_.Name)" dhcp 2>$null | Out-Null } catch {}
+        try { & netsh interface ip set dns    name="$($_.Name)" dhcp 2>$null | Out-Null } catch {}
+    }
     # The NIC may be bound but sitting on APIPA because its first DHCP
     # Discover raced the driver bind. Release+renew a few times until slirp
     # hands it 10.0.2.15 (bounce the adapter first to force a clean cycle).
