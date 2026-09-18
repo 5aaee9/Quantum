@@ -102,7 +102,7 @@ jobs:
                 printf 'screendump /tmp/winscreens/%s.ppm\n' "$(date +%s)" | sudo socat - UNIX-CONNECT:windows-2025-runner-monitor.sock 2>/dev/null
                 # query NIC/link + pci state; -t holds the socket open long
                 # enough to read the monitor's reply into net.txt
-                { echo 'info network'; echo 'info pci'; sleep 1; } | sudo socat -t 3 - UNIX-CONNECT:windows-2025-runner-monitor.sock >> /tmp/winscreens/net.txt 2>/dev/null
+                { echo 'info network'; echo 'info usernet'; echo 'info pci'; sleep 1; } | sudo socat -t 3 - UNIX-CONNECT:windows-2025-runner-monitor.sock >> /tmp/winscreens/net.txt 2>/dev/null
               fi
               # query the guest's interfaces via the QEMU guest agent
               # (works even with no guest network — goes over virtio-serial).
