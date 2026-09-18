@@ -144,10 +144,10 @@ try {
     Write-Host ("PING 10.0.2.2 = " + $ping)
     try { $tnc = (Test-NetConnection -ComputerName 10.0.2.2 -Port 8080 -WarningAction SilentlyContinue).TcpTestSucceeded } catch { $tnc = $false }
     Write-Host ("TCP 10.0.2.2:8080 = " + $tnc)
-    # ipconfig /all shows DHCP-enabled, the DHCP server that answered (if
-    # any) and lease state — the decisive readout on why there's no lease.
-    Write-Host '---- ipconfig /all (dhcp/gw lines) ----'
-    (& ipconfig /all) -match 'adapter|DHCP Enabled|DHCP Server|IPv4 Address|Autoconfiguration|Default Gateway|Subnet' | ForEach-Object { Write-Host $_ }
+    # full ipconfig /all — every adapter + DHCP/server/lease lines, no
+    # filter, so nothing is hidden by the grep pattern.
+    Write-Host '---- ipconfig /all ----'
+    (& ipconfig /all) | ForEach-Object { Write-Host $_ }
     Write-Host '=================================================='
     # hold the NETSTATE block on screen for ~90s so a screendump catches it
     # before the (network-bound) OpenSSH download step runs.
