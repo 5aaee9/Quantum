@@ -100,17 +100,14 @@ try {
         Where-Object { $_.IPAddress -notlike '169.254*' -and $_.IPAddress -ne '127.0.0.1' }
     if (-not $hasRealIp) {
         Write-Status 'dhcp-failed setting static 10.0.2.15'
-        Get-NetAdapter -ErrorAction SilentlyContinue | ForEach-Object {
+        # target only the Up NICs — setting the same static address on every
+        # adapter (incl. disconnected ones) can conflict and silently fail.
+        Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'Up' } | ForEach-Object {
             $n = $_.Name
-            # netsh is the reliable way to force a static address —
-            # New-NetIPAddress silently no-ops when the interface still has
-            # an APIPA lease / DHCP enabled.
-            try { & netsh interface ip set address name="$n" static 10.0.2.15 255.255.255.0 10.0.2.2 2>$null | Out-Null } catch {}
-            try { & netsh interface ip set dns    name="$n" static 10.0.2.3 2>$null | Out-Null } catch {}
+            Write-Host "---- netsh static on '$n' (ifIndex $($_.ifIndex)) ----"
+            & netsh interface ip set address name="$n" static 10.0.2.15 255.255.255.0 10.0.2.2 | Out-String | Write-Host
+            & netsh interface ip set dns    name="$n" static 10.0.2.3 | Out-String | Write-Host
             try { Set-DnsClientServerAddress -InterfaceIndex $_.ifIndex -ServerAddresses 10.0.2.3 -ErrorAction SilentlyContinue } catch {}
-            try {
-                New-NetIPAddress -InterfaceIndex $_.ifIndex -IPAddress 10.0.2.15 -PrefixLength 24 -DefaultGateway 10.0.2.2 -ErrorAction Stop | Out-Null
-            } catch {}
         }
         Start-Sleep -Seconds 5
     }
@@ -130,6 +127,10 @@ try {
     Write-Host ("PING 10.0.2.2 = " + $ping)
     try { $tnc = (Test-NetConnection -ComputerName 10.0.2.2 -Port 8080 -WarningAction SilentlyContinue).TcpTestSucceeded } catch { $tnc = $false }
     Write-Host ("TCP 10.0.2.2:8080 = " + $tnc)
+    # ipconfig /all shows DHCP-enabled, the DHCP server that answered (if
+    # any) and lease state — the decisive readout on why there's no lease.
+    Write-Host '---- ipconfig /all (dhcp/gw lines) ----'
+    (& ipconfig /all) -match 'adapter|DHCP Enabled|DHCP Server|IPv4 Address|Autoconfiguration|Default Gateway|Subnet' | ForEach-Object { Write-Host $_ }
     Write-Host '=================================================='
     # hold the NETSTATE block on screen for ~90s so a screendump catches it
     # before the (network-bound) OpenSSH download step runs.
