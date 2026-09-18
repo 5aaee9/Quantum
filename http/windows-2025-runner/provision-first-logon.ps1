@@ -96,7 +96,7 @@ try {
     # also paint the network state on the console so a VNC/monitor
     # screendump shows it even when outbound pings can't reach the host.
     Write-Host '==================== NETSTATE ===================='
-    Get-NetAdapter -ErrorAction SilentlyContinue | Format-Table Name,Status,InterfaceDescription -Auto | Out-String | Write-Host
+    Get-NetAdapter -ErrorAction SilentlyContinue | Format-Table Name,Status,MediaConnectionState,LinkSpeed,InterfaceDescription -Auto | Out-String | Write-Host
     Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | Format-Table InterfaceAlias,IPAddress -Auto | Out-String | Write-Host
     Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Format-Table ifIndex,NextHop -Auto | Out-String | Write-Host
     Get-PnpDevice -Class Net -ErrorAction SilentlyContinue | Format-Table Status,FriendlyName -Auto | Out-String | Write-Host
