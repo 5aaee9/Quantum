@@ -51,30 +51,31 @@ Write-Com1 'bootstrap starting'
 # force-install every driver .inf on the provision CD so the NIC comes up
 # before we do anything network-dependent. Runs elevated (UAC is off).
 try {
-    $up = Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object Status -eq 'Up'
-    if (-not $up) {
-        # stage every .inf on the provision CD (NetKVM et al)
+    # Heal when the NIC isn't actually usable: no non-APIPA IPv4, OR a PNP
+    # net device still in Error. 'Status -eq Up' is NOT enough — a virtio
+    # NIC with no NetKVM still reports link-Up and grabs a 169.254.x APIPA
+    # address, which made the old -not-$up check skip the heal entirely.
+    $hasRealIp = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+        Where-Object { $_.IPAddress -notlike '169.254*' -and $_.IPAddress -ne '127.0.0.1' }
+    $erroredNic = Get-PnpDevice -Class Net -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'Error' }
+    if (-not $hasRealIp -or $erroredNic) {
+        Write-Status ("nic-heal realIp=" + [bool]$hasRealIp + " err=" + (($erroredNic | ForEach-Object FriendlyName) -join ';'))
+        # install the full virtio guest-tools — it registers AND binds
+        # NetKVM/vioscsi on already-enumerated devices (pnputil only stages
+        # into the driver store; the NIC can stay driverless until rescan).
         foreach ($d in 'D','E','F','G','H') {
-            if (Test-Path "${d}:\netkvm.inf") {
-                & pnputil /add-driver "${d}:\*.inf" /subdirs /install 2>$null | Out-Null
-            }
+            $gt = "${d}:\virtio-win-guest-tools.exe"
+            if (Test-Path $gt) { Write-Status 'gt-install'; Start-Process $gt -ArgumentList '/install','/quiet','/norestart' -Wait }
         }
-        Start-Sleep -Seconds 8
-        # still nothing -> run the full virtio-win guest-tools installer,
-        # which *binds* the drivers (pnputil only stages them into the
-        # store; the NIC can stay driverless until a rescan/enumeration).
-        $up = Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object Status -eq 'Up'
-        if (-not $up) {
-            foreach ($d in 'D','E','F','G','H') {
-                $gt = "${d}:\virtio-win-guest-tools.exe"
-                if (Test-Path $gt) { Start-Process $gt -ArgumentList '/install','/quiet','/norestart' -Wait }
-            }
-            Start-Sleep -Seconds 10
+        # fall back to staging every driver .inf on the provision CD.
+        foreach ($d in 'D','E','F','G','H') {
+            if (Test-Path "${d}:\*.inf") { & pnputil /add-driver "${d}:\*.inf" /subdirs /install 2>$null | Out-Null }
         }
+        Start-Sleep -Seconds 10
+        # force a DHCP renew so the NIC picks up slirp's 10.0.2.x address now.
+        Get-NetAdapter -ErrorAction SilentlyContinue | ForEach-Object { try { & ipconfig /renew $_.Name 2>$null | Out-Null } catch {} }
+        Start-Sleep -Seconds 5
     }
-    # force a DHCP renew so the NIC picks up slirp's 10.0.2.x address now.
-    Get-NetAdapter -ErrorAction SilentlyContinue | ForEach-Object { try { & ipconfig /renew $_.Name 2>$null | Out-Null } catch {} }
-    Start-Sleep -Seconds 5
     $ip = (Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.IPAddress -notlike '169.254*' } | Select-Object -First 1).IPAddress
     Write-Status ("SCRIPT-STARTED adapters=" + ((Get-NetAdapter -ErrorAction SilentlyContinue | ForEach-Object { $_.Name + ':' + $_.Status }) -join ',') + " ip=$ip")
     # also paint the network state on the console so a VNC/monitor
