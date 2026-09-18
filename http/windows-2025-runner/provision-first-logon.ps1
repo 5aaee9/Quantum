@@ -117,6 +117,13 @@ try {
     Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | Format-Table InterfaceAlias,IPAddress -Auto | Out-String | Write-Host
     Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Format-Table ifIndex,NextHop -Auto | Out-String | Write-Host
     Get-PnpDevice -Class Net -ErrorAction SilentlyContinue | Format-Table Status,FriendlyName -Auto | Out-String | Write-Host
+    # can the guest reach slirp at all? a reachable 10.0.2.2 means the NIC
+    # dataplane works and only DHCP/sshd is missing; unreachable means the
+    # virtio-net device isn't actually exchanging frames with user.0.
+    $ping = Test-Connection -ComputerName 10.0.2.2 -Count 2 -Quiet -ErrorAction SilentlyContinue
+    Write-Host ("PING 10.0.2.2 = " + $ping)
+    try { $tnc = (Test-NetConnection -ComputerName 10.0.2.2 -Port 8080 -WarningAction SilentlyContinue).TcpTestSucceeded } catch { $tnc = $false }
+    Write-Host ("TCP 10.0.2.2:8080 = " + $tnc)
     Write-Host '=================================================='
     # hold the NETSTATE block on screen for ~90s so a screendump catches it
     # before the (network-bound) OpenSSH download step runs.
