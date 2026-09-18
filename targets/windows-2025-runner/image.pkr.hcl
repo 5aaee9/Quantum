@@ -88,11 +88,20 @@ source "qemu" "windows-2025-runner" {
   shutdown_timeout       = "1h"
 
   qemuargs = [
-    ["-machine", "type=q35,accel=hvf:kvm:whpx:tcg"],
+    # match rgl/windows-vagrant's proven Windows+qemu device set as closely
+    # as packer allows (packer owns the disks/ISOs/EFI drives; we only add
+    # devices it doesn't generate).
+    ["-machine", "type=q35,accel=kvm:tcg,hpet=off"],
     # Hyper-V enlightenments: large speedup for Windows guests on KVM.
     ["-cpu", "host,hv-passthrough"],
     ["-rtc", "base=localtime,clock=host"],
     ["-vga", "qxl"],
+    ["-device", "qemu-xhci"],
+    ["-device", "virtio-tablet"],
+    # virtio serial console + QEMU guest-agent channel (rgl has these).
+    ["-device", "virtio-serial-pci"],
+    ["-chardev", "socket,path=windows-2025-runner-qga.sock,server=on,wait=off,id=qga0"],
+    ["-device", "virtserialport,chardev=qga0,name=org.qemu.guest_agent.0"],
     # Capture the guest serial console (OVMF boot log lands here) and a
     # QEMU monitor socket so the Build step can grab a screendump of the
     # guest's display on failure — shows exactly which screen it's stuck

@@ -76,6 +76,10 @@ try {
         & pnputil /scan-devices 2>$null | Out-Null
         Start-Sleep -Seconds 12
     }
+    # Make sure the DHCP client service is actually running — if it's
+    # stopped/disabled the adapter can never get a lease no matter what.
+    try { Set-Service -Name Dhcp -StartupType Automatic -ErrorAction SilentlyContinue } catch {}
+    try { if ((Get-Service Dhcp).Status -ne 'Running') { Restart-Service Dhcp -Force -ErrorAction Stop } } catch {}
     # The NIC may be bound but sitting on APIPA because its first DHCP
     # Discover raced the driver bind. Release+renew a few times until slirp
     # hands it 10.0.2.15 (bounce the adapter first to force a clean cycle).
