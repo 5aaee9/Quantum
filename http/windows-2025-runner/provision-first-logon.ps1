@@ -67,6 +67,11 @@ try {
             $gt = "${d}:\virtio-win-guest-tools.exe"
             if (Test-Path $gt) { Write-Status 'gt-install'; Start-Process $gt -ArgumentList '/install','/quiet','/norestart' -Wait }
         }
+        # the guest-tools install registers qemu-ga (the guest agent) — make
+        # sure it's running so the QEMU QGA channel goes live for out-of-band
+        # diagnostics (guest-network-get-interfaces needs no guest network).
+        try { Set-Service -Name 'QEMU-GA' -StartupType Automatic -ErrorAction SilentlyContinue; Start-Service -Name 'QEMU-GA' -ErrorAction SilentlyContinue } catch {}
+        try { Set-Service -Name 'QEMU Guest Agent' -StartupType Automatic -ErrorAction SilentlyContinue; Start-Service -Name 'QEMU Guest Agent' -ErrorAction SilentlyContinue } catch {}
         # fall back to staging every driver .inf on the provision CD.
         foreach ($d in 'D','E','F','G','H') {
             if (Test-Path "${d}:\*.inf") { & pnputil /add-driver "${d}:\*.inf" /subdirs /install 2>$null | Out-Null }

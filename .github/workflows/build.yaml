@@ -104,6 +104,13 @@ jobs:
                 # enough to read the monitor's reply into net.txt
                 { echo 'info network'; echo 'info pci'; sleep 1; } | sudo socat -t 3 - UNIX-CONNECT:windows-2025-runner-monitor.sock >> /tmp/winscreens/net.txt 2>/dev/null
               fi
+              # query the guest's interfaces via the QEMU guest agent
+              # (works even with no guest network — goes over virtio-serial).
+              # Only answers once guest-tools installed the agent.
+              if [ -S windows-2025-runner-qga.sock ]; then
+                printf '{"execute":"guest-network-get-interfaces"}\n' | sudo socat -t 4 - UNIX-CONNECT:windows-2025-runner-qga.sock >> /tmp/winscreens/qga.txt 2>/dev/null
+                echo >> /tmp/winscreens/qga.txt
+              fi
               sleep 60
             done
           ) &
@@ -122,6 +129,8 @@ jobs:
             grep -oE 'GET /\?s=[^ ]+' guest-status.log 2>/dev/null | sed 's|GET /?s=||' | while read -r l; do python3 -c "import urllib.parse,sys;print(urllib.parse.unquote(sys.argv[1]))" "$l"; done || cat guest-status.log 2>/dev/null
             echo '==== qemu guest network/pci state ===='
             tail -60 /tmp/winscreens/net.txt 2>/dev/null || echo 'no monitor net info'
+            echo '==== qemu guest agent interfaces ===='
+            tail -30 /tmp/winscreens/qga.txt 2>/dev/null || echo 'no qga data'
             echo '==== guest status floppy ===='
             sudo mdir -i windows-2025-runner-status.img :: 2>/dev/null
             sudo mtype -i windows-2025-runner-status.img ::STATUS.TXT 2>/dev/null || echo 'no status file'
