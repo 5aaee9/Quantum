@@ -57,22 +57,21 @@ try {
     # -netdev user setup gets 10.0.2.15 instantly; this guest never does).
     # So: heal the NIC driver if needed, then set slirp's deterministic
     # static address directly. DHCP is not attempted.
-    $erroredNic = Get-PnpDevice -Class Net -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'Error' }
-    if ($erroredNic) {
-        Write-Status ('nic-heal err=' + (($erroredNic | ForEach-Object FriendlyName) -join ';'))
-        # install the full virtio guest-tools — it registers AND binds the
-        # drivers on already-enumerated devices (pnputil only stages them).
-        foreach ($d in 'D','E','F','G','H') {
-            $gt = "${d}:\virtio-win-guest-tools.exe"
-            if (Test-Path $gt) { Write-Status 'gt-install'; Start-Process $gt -ArgumentList '/install','/quiet','/norestart' -Wait }
-            if (Test-Path "${d}:\*.inf") { & pnputil /add-driver "${d}:\*.inf" /subdirs /install 2>$null | Out-Null }
-        }
-        & pnputil /scan-devices 2>$null | Out-Null
-        Start-Sleep -Seconds 12
+    # Always install the virtio guest-tools — it binds the virtio drivers
+    # properly AND installs qemu-ga (the guest agent), which gives the QEMU
+    # monitor a guest-network-get-interfaces channel that needs no guest
+    # network — the only reliable way to read the guest's real IP state.
+    foreach ($d in 'D','E','F','G','H') {
+        $gt = "${d}:\virtio-win-guest-tools.exe"
+        if (Test-Path $gt) { Write-Status 'gt-install'; Start-Process $gt -ArgumentList '/install','/quiet','/norestart' -Wait }
+        if (Test-Path "${d}:\*.inf") { & pnputil /add-driver "${d}:\*.inf" /subdirs /install 2>$null | Out-Null }
     }
-    # start the QEMU guest agent if guest-tools installed it — enables
-    # out-of-band guest-network-get-interfaces diagnostics over virtio-serial.
-    try { Set-Service 'QEMU-GA' -StartupType Automatic -ErrorAction SilentlyContinue; Start-Service 'QEMU-GA' -ErrorAction SilentlyContinue } catch {}
+    & pnputil /scan-devices 2>$null | Out-Null
+    Start-Sleep -Seconds 12
+    # start the QEMU guest agent so the monitor can query guest interfaces.
+    foreach ($svc in 'QEMU-GA','QEMU Guest Agent','QEMU Guest Agent VSS Provider') {
+        try { Set-Service $svc -StartupType Automatic -ErrorAction SilentlyContinue; Start-Service $svc -ErrorAction SilentlyContinue } catch {}
+    }
     # firewall off — the build VM must accept the forwarded SSH connection.
     try { Set-NetFirewallProfile -All -Enabled False -ErrorAction SilentlyContinue } catch {}
     try { & netsh advfirewall set allprofiles state off 2>$null | Out-Null } catch {}
