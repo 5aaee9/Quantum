@@ -127,11 +127,17 @@ try {
         Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'Up' } | ForEach-Object {
             $n = $_.Name
             Write-Host "---- netsh static on '$n' (ifIndex $($_.ifIndex)) ----"
+            # strip the stale APIPA address first, then force the static one
+            try { Remove-NetIPAddress -InterfaceIndex $_.ifIndex -AddressFamily IPv4 -Confirm:$false -ErrorAction SilentlyContinue } catch {}
             & netsh interface ip set address name="$n" static 10.0.2.15 255.255.255.0 10.0.2.2 | Out-String | Write-Host
             & netsh interface ip set dns    name="$n" static 10.0.2.3 | Out-String | Write-Host
             try { Set-DnsClientServerAddress -InterfaceIndex $_.ifIndex -ServerAddresses 10.0.2.3 -ErrorAction SilentlyContinue } catch {}
         }
-        Start-Sleep -Seconds 5
+        Start-Sleep -Seconds 6
+        # verify: did the static actually stick, and can we reach slirp now?
+        $now = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.IPAddress -notlike '169.254*' } | Select-Object -First 1
+        Write-Host ("STATIC-IP-RESULT ip=" + $now.IPAddress)
+        Write-Host ("PING-AFTER-STATIC " + (Test-Connection -ComputerName 10.0.2.2 -Count 2 -Quiet -ErrorAction SilentlyContinue))
     }
     $ip = (Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.IPAddress -notlike '169.254*' } | Select-Object -First 1).IPAddress
     Write-Status ("SCRIPT-STARTED adapters=" + ((Get-NetAdapter -ErrorAction SilentlyContinue | ForEach-Object { $_.Name + ':' + $_.Status }) -join ',') + " ip=$ip")
