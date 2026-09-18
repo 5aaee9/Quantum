@@ -101,9 +101,15 @@ try {
     if (-not $hasRealIp) {
         Write-Status 'dhcp-failed setting static 10.0.2.15'
         Get-NetAdapter -ErrorAction SilentlyContinue | ForEach-Object {
+            $n = $_.Name
+            # netsh is the reliable way to force a static address —
+            # New-NetIPAddress silently no-ops when the interface still has
+            # an APIPA lease / DHCP enabled.
+            try { & netsh interface ip set address name="$n" static 10.0.2.15 255.255.255.0 10.0.2.2 2>$null | Out-Null } catch {}
+            try { & netsh interface ip set dns    name="$n" static 10.0.2.3 2>$null | Out-Null } catch {}
+            try { Set-DnsClientServerAddress -InterfaceIndex $_.ifIndex -ServerAddresses 10.0.2.3 -ErrorAction SilentlyContinue } catch {}
             try {
                 New-NetIPAddress -InterfaceIndex $_.ifIndex -IPAddress 10.0.2.15 -PrefixLength 24 -DefaultGateway 10.0.2.2 -ErrorAction Stop | Out-Null
-                Set-DnsClientServerAddress -InterfaceIndex $_.ifIndex -ServerAddresses 10.0.2.3 -ErrorAction SilentlyContinue
             } catch {}
         }
         Start-Sleep -Seconds 5
