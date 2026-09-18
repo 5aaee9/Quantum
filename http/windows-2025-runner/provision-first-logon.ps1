@@ -71,7 +71,10 @@ try {
         foreach ($d in 'D','E','F','G','H') {
             if (Test-Path "${d}:\*.inf") { & pnputil /add-driver "${d}:\*.inf" /subdirs /install 2>$null | Out-Null }
         }
-        Start-Sleep -Seconds 10
+        # rescan so the freshly-registered NetKVM binds to the
+        # already-present 'Ethernet Controller' devices.
+        & pnputil /scan-devices 2>$null | Out-Null
+        Start-Sleep -Seconds 12
         # force a DHCP renew so the NIC picks up slirp's 10.0.2.x address now.
         Get-NetAdapter -ErrorAction SilentlyContinue | ForEach-Object { try { & ipconfig /renew $_.Name 2>$null | Out-Null } catch {} }
         Start-Sleep -Seconds 5
