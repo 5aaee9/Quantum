@@ -75,8 +75,37 @@ try {
         # already-present 'Ethernet Controller' devices.
         & pnputil /scan-devices 2>$null | Out-Null
         Start-Sleep -Seconds 12
-        # force a DHCP renew so the NIC picks up slirp's 10.0.2.x address now.
-        Get-NetAdapter -ErrorAction SilentlyContinue | ForEach-Object { try { & ipconfig /renew $_.Name 2>$null | Out-Null } catch {} }
+    }
+    # The NIC may be bound but sitting on APIPA because its first DHCP
+    # Discover raced the driver bind. Release+renew a few times until slirp
+    # hands it 10.0.2.15 (bounce the adapter first to force a clean cycle).
+    $tries = 0
+    while ($tries -lt 6) {
+        $hasRealIp = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+            Where-Object { $_.IPAddress -notlike '169.254*' -and $_.IPAddress -ne '127.0.0.1' }
+        if ($hasRealIp) { break }
+        Get-NetAdapter -ErrorAction SilentlyContinue | ForEach-Object {
+            try { Disable-NetAdapter -Name $_.Name -Confirm:$false -ErrorAction Stop } catch {}
+            try { Enable-NetAdapter  -Name $_.Name -Confirm:$false -ErrorAction Stop } catch {}
+            try { & ipconfig /release $_.Name 2>$null | Out-Null } catch {}
+            try { & ipconfig /renew   $_.Name 2>$null | Out-Null } catch {}
+        }
+        $tries++
+        Start-Sleep -Seconds 10
+    }
+    # Last resort: QEMU user networking is a fixed 10.0.2.0/24 (gw .2, dns
+    # .3, guest .15). If DHCP never answered, just set it statically — this
+    # is a build VM, the address is deterministic.
+    $hasRealIp = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+        Where-Object { $_.IPAddress -notlike '169.254*' -and $_.IPAddress -ne '127.0.0.1' }
+    if (-not $hasRealIp) {
+        Write-Status 'dhcp-failed setting static 10.0.2.15'
+        Get-NetAdapter -ErrorAction SilentlyContinue | ForEach-Object {
+            try {
+                New-NetIPAddress -InterfaceIndex $_.ifIndex -IPAddress 10.0.2.15 -PrefixLength 24 -DefaultGateway 10.0.2.2 -ErrorAction Stop | Out-Null
+                Set-DnsClientServerAddress -InterfaceIndex $_.ifIndex -ServerAddresses 10.0.2.3 -ErrorAction SilentlyContinue
+            } catch {}
+        }
         Start-Sleep -Seconds 5
     }
     $ip = (Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.IPAddress -notlike '169.254*' } | Select-Object -First 1).IPAddress
