@@ -51,94 +51,46 @@ Write-Com1 'bootstrap starting'
 # force-install every driver .inf on the provision CD so the NIC comes up
 # before we do anything network-dependent. Runs elevated (UAC is off).
 try {
-    # Heal when the NIC isn't actually usable: no non-APIPA IPv4, OR a PNP
-    # net device still in Error. 'Status -eq Up' is NOT enough — a virtio
-    # NIC with no NetKVM still reports link-Up and grabs a 169.254.x APIPA
-    # address, which made the old -not-$up check skip the heal entirely.
-    $hasRealIp = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
-        Where-Object { $_.IPAddress -notlike '169.254*' -and $_.IPAddress -ne '127.0.0.1' }
+    # QEMU slirp's BOOTP/DHCP server cannot serve a Windows guest: Windows
+    # sends DISCOVER then immediately a sanity-check REQUEST, which slirp
+    # mishandles — a known QEMU/slirp quirk (a Linux guest on the identical
+    # -netdev user setup gets 10.0.2.15 instantly; this guest never does).
+    # So: heal the NIC driver if needed, then set slirp's deterministic
+    # static address directly. DHCP is not attempted.
     $erroredNic = Get-PnpDevice -Class Net -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'Error' }
-    if (-not $hasRealIp -or $erroredNic) {
-        Write-Status ("nic-heal realIp=" + [bool]$hasRealIp + " err=" + (($erroredNic | ForEach-Object FriendlyName) -join ';'))
-        # install the full virtio guest-tools — it registers AND binds
-        # NetKVM/vioscsi on already-enumerated devices (pnputil only stages
-        # into the driver store; the NIC can stay driverless until rescan).
+    if ($erroredNic) {
+        Write-Status ('nic-heal err=' + (($erroredNic | ForEach-Object FriendlyName) -join ';'))
+        # install the full virtio guest-tools — it registers AND binds the
+        # drivers on already-enumerated devices (pnputil only stages them).
         foreach ($d in 'D','E','F','G','H') {
             $gt = "${d}:\virtio-win-guest-tools.exe"
             if (Test-Path $gt) { Write-Status 'gt-install'; Start-Process $gt -ArgumentList '/install','/quiet','/norestart' -Wait }
-        }
-        # the guest-tools install registers qemu-ga (the guest agent) — make
-        # sure it's running so the QEMU QGA channel goes live for out-of-band
-        # diagnostics (guest-network-get-interfaces needs no guest network).
-        try { Set-Service -Name 'QEMU-GA' -StartupType Automatic -ErrorAction SilentlyContinue; Start-Service -Name 'QEMU-GA' -ErrorAction SilentlyContinue } catch {}
-        try { Set-Service -Name 'QEMU Guest Agent' -StartupType Automatic -ErrorAction SilentlyContinue; Start-Service -Name 'QEMU Guest Agent' -ErrorAction SilentlyContinue } catch {}
-        # fall back to staging every driver .inf on the provision CD.
-        foreach ($d in 'D','E','F','G','H') {
             if (Test-Path "${d}:\*.inf") { & pnputil /add-driver "${d}:\*.inf" /subdirs /install 2>$null | Out-Null }
         }
-        # rescan so the freshly-registered NetKVM binds to the
-        # already-present 'Ethernet Controller' devices.
         & pnputil /scan-devices 2>$null | Out-Null
         Start-Sleep -Seconds 12
     }
-    # Kill the firewall entirely — on a fresh eval install the NIC lands in
-    # a restrictive profile whose inbound rules can swallow the DHCP OFFER
-    # (the guest sends DISCOVER, never sees the reply, falls to APIPA).
+    # start the QEMU guest agent if guest-tools installed it — enables
+    # out-of-band guest-network-get-interfaces diagnostics over virtio-serial.
+    try { Set-Service 'QEMU-GA' -StartupType Automatic -ErrorAction SilentlyContinue; Start-Service 'QEMU-GA' -ErrorAction SilentlyContinue } catch {}
+    # firewall off — the build VM must accept the forwarded SSH connection.
     try { Set-NetFirewallProfile -All -Enabled False -ErrorAction SilentlyContinue } catch {}
     try { & netsh advfirewall set allprofiles state off 2>$null | Out-Null } catch {}
-    # Make sure the DHCP client service is actually running — if it's
-    # stopped/disabled the adapter can never get a lease no matter what.
-    try { Set-Service -Name Dhcp -StartupType Automatic -ErrorAction SilentlyContinue } catch {}
-    try { if ((Get-Service Dhcp).Status -ne 'Running') { Restart-Service Dhcp -Force -ErrorAction Stop } } catch {}
-    # Force DHCP back ON at the interface level — a stray static config or
-    # the netsh fallback can leave 'DHCP Enabled = No' on the adapter, in
-    # which case it sits on APIPA forever and never asks slirp for a lease.
-    Get-NetAdapter -ErrorAction SilentlyContinue | ForEach-Object {
-        try { Set-NetIPInterface -InterfaceIndex $_.ifIndex -Dhcp Enabled -ErrorAction Stop } catch {}
-        try { & netsh interface ip set address name="$($_.Name)" dhcp 2>$null | Out-Null } catch {}
-        try { & netsh interface ip set dns    name="$($_.Name)" dhcp 2>$null | Out-Null } catch {}
+    # Assign slirp's fixed guest address statically on the Up NIC. QEMU user
+    # net is always 10.0.2.0/24 (gw .2, dns .3, guest .15).
+    Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'Up' } | ForEach-Object {
+        $n = $_.Name
+        Write-Host "---- static 10.0.2.15 on '$n' (ifIndex $($_.ifIndex)) ----"
+        try { Remove-NetIPAddress -InterfaceIndex $_.ifIndex -AddressFamily IPv4 -Confirm:$false -ErrorAction SilentlyContinue } catch {}
+        try { Remove-NetRoute -InterfaceIndex $_.ifIndex -DestinationPrefix '0.0.0.0/0' -Confirm:$false -ErrorAction SilentlyContinue } catch {}
+        & netsh interface ip set address name="$n" static 10.0.2.15 255.255.255.0 10.0.2.2 | Out-String | Write-Host
+        & netsh interface ip set dns    name="$n" static 10.0.2.3 | Out-String | Write-Host
+        try { Set-DnsClientServerAddress -InterfaceIndex $_.ifIndex -ServerAddresses 10.0.2.3 -ErrorAction SilentlyContinue } catch {}
     }
-    # The NIC may be bound but sitting on APIPA because its first DHCP
-    # Discover raced the driver bind. Release+renew a few times until slirp
-    # hands it 10.0.2.15 (bounce the adapter first to force a clean cycle).
-    $tries = 0
-    while ($tries -lt 6) {
-        $hasRealIp = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
-            Where-Object { $_.IPAddress -notlike '169.254*' -and $_.IPAddress -ne '127.0.0.1' }
-        if ($hasRealIp) { break }
-        Get-NetAdapter -ErrorAction SilentlyContinue | ForEach-Object {
-            try { Disable-NetAdapter -Name $_.Name -Confirm:$false -ErrorAction Stop } catch {}
-            try { Enable-NetAdapter  -Name $_.Name -Confirm:$false -ErrorAction Stop } catch {}
-            try { & ipconfig /release $_.Name 2>$null | Out-Null } catch {}
-            try { & ipconfig /renew   $_.Name 2>$null | Out-Null } catch {}
-        }
-        $tries++
-        Start-Sleep -Seconds 10
-    }
-    # Last resort: QEMU user networking is a fixed 10.0.2.0/24 (gw .2, dns
-    # .3, guest .15). If DHCP never answered, just set it statically — this
-    # is a build VM, the address is deterministic.
-    $hasRealIp = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
-        Where-Object { $_.IPAddress -notlike '169.254*' -and $_.IPAddress -ne '127.0.0.1' }
-    if (-not $hasRealIp) {
-        Write-Status 'dhcp-failed setting static 10.0.2.15'
-        # target only the Up NICs — setting the same static address on every
-        # adapter (incl. disconnected ones) can conflict and silently fail.
-        Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'Up' } | ForEach-Object {
-            $n = $_.Name
-            Write-Host "---- netsh static on '$n' (ifIndex $($_.ifIndex)) ----"
-            # strip the stale APIPA address first, then force the static one
-            try { Remove-NetIPAddress -InterfaceIndex $_.ifIndex -AddressFamily IPv4 -Confirm:$false -ErrorAction SilentlyContinue } catch {}
-            & netsh interface ip set address name="$n" static 10.0.2.15 255.255.255.0 10.0.2.2 | Out-String | Write-Host
-            & netsh interface ip set dns    name="$n" static 10.0.2.3 | Out-String | Write-Host
-            try { Set-DnsClientServerAddress -InterfaceIndex $_.ifIndex -ServerAddresses 10.0.2.3 -ErrorAction SilentlyContinue } catch {}
-        }
-        Start-Sleep -Seconds 6
-        # verify: did the static actually stick, and can we reach slirp now?
-        $now = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.IPAddress -notlike '169.254*' } | Select-Object -First 1
-        Write-Host ("STATIC-IP-RESULT ip=" + $now.IPAddress)
-        Write-Host ("PING-AFTER-STATIC " + (Test-Connection -ComputerName 10.0.2.2 -Count 2 -Quiet -ErrorAction SilentlyContinue))
-    }
+    Start-Sleep -Seconds 6
+    $now = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.IPAddress -notlike '169.254*' } | Select-Object -First 1
+    Write-Host ("STATIC-IP-RESULT ip=" + $now.IPAddress)
+    Write-Host ("PING-AFTER-STATIC " + (Test-Connection -ComputerName 10.0.2.2 -Count 2 -Quiet -ErrorAction SilentlyContinue))
     $ip = (Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.IPAddress -notlike '169.254*' } | Select-Object -First 1).IPAddress
     Write-Status ("SCRIPT-STARTED adapters=" + ((Get-NetAdapter -ErrorAction SilentlyContinue | ForEach-Object { $_.Name + ':' + $_.Status }) -join ',') + " ip=$ip")
     # also paint the network state on the console so a VNC/monitor
