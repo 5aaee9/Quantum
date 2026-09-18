@@ -23,12 +23,11 @@ source "qemu" "windows-2025-runner" {
   memory            = var.memory
   disk_size         = var.disk_size
   disk_interface    = "virtio-scsi"
-  # 'virtio-net' (transitional) — exactly what rgl/windows-vagrant uses and
-  # what the NetKVM driver binds to on q35. ('e1000' is legacy-PCI and made
-  # QEMU 8.2 refuse to launch on q35; 'virtio-net-pci' is modern-only.)
-  # NetKVM is staged on the provision ISO and injected via DriverPaths,
-  # same mechanism that makes virtio-scsi boot.
-  net_device        = "virtio-net"
+  # e1000 — Intel PRO/1000. Proven end-to-end: a Debian guest on this
+  # exact -netdev user setup gets a slirp DHCP lease instantly, and Windows
+  # Server 2025 has inbox e1000 drivers (no NetKVM/guest-tools dependency
+  # for basic connectivity). virtio-net bound but never passed frames.
+  net_device        = "e1000"
   format            = "qcow2"
 
   efi_boot          = true
