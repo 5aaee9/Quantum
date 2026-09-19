@@ -126,8 +126,21 @@ source "qemu" "windows-2025-runner" {
     # (10.0.3.1/24, NAT'd to eth0); the guest gets 10.0.3.15 statically.
     # MAC 52:54:00:aa:bb:cc marks this NIC so the first-logon script can
     # pick it out from packer's own (slirp, non-functional) NIC.
-    ["-netdev", "tap,id=tap0,ifname=tap0,script=no,downscript=no"],
-    ["-device", "virtio-net-pci,netdev=tap0,mac=52:54:00:aa:bb:cc"],
+    # packer still emits `-device virtio-net,netdev=user.0` for its managed
+    # NIC even when ssh_host is set, but does NOT create the user.0 netdev
+    # in that mode — QEMU then fails with "can't find value 'user.0'".
+    # Provide it ourselves (a dead slirp netdev; the guest disables it).
+    ["-netdev", "user,id=user.0"],
+    # vnet_hdr=off: the tap NIC is e1000 (not virtio), so QEMU must not
+    # prepend the virtio-net header — otherwise frames the host pushes into
+    # tap0 arrive at the guest mangled and it silently drops them (exactly
+    # the host->guest-unreachable symptom).
+    ["-netdev", "tap,id=tap0,ifname=tap0,script=no,downscript=no,vnet_hdr=off"],
+    # e1000 for the tap NIC — virtio-net's RX path drops broadcast frames
+    # for this Windows guest (it never answers the host's ARP request, so
+    # host->guest is unreachable even though guest->host works). e1000's
+    # Intel PRO/1000 driver handles broadcast RX correctly.
+    ["-device", "e1000,netdev=tap0,mac=52:54:00:aa:bb:cc"],
     # NOTE: do NOT add a -drive entry here. A `-drive` in qemuargs makes
     # packer drop *all* of its own generated -drive args (boot disk, the
     # Windows install ISO, the provision CD, and the EFI pflash), so QEMU

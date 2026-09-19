@@ -83,6 +83,15 @@ try {
     # Up adapter if the tap NIC isn't enumerated yet.
     $tapNic = Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.MacAddress -eq '52-54-00-AA-BB-CC' }
     if (-not $tapNic) { $tapNic = Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'Up' } | Select-Object -First 1 }
+    # disable every OTHER adapter — packer also attaches a (dead) slirp NIC
+    # and Windows' weak-host routing can leak the tap subnet's ARP/ICMP out
+    # the wrong interface, leaving host->guest unreachable. One live NIC
+    # removes all ambiguity.
+    $tapIf = $tapNic.ifIndex
+    Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.ifIndex -ne $tapIf } | ForEach-Object {
+        Write-Host ("disabling stray nic " + $_.Name + " mac " + $_.MacAddress)
+        try { Disable-NetAdapter -Name $_.Name -Confirm:$false -ErrorAction SilentlyContinue } catch {}
+    }
     $tapNic | ForEach-Object {
         $n = $_.Name
         Write-Host "---- static 10.0.3.15 on '$n' (ifIndex $($_.ifIndex), mac $($_.MacAddress)) ----"
@@ -92,7 +101,27 @@ try {
         try { Remove-NetRoute -InterfaceIndex $_.ifIndex -DestinationPrefix '0.0.0.0/0' -Confirm:$false -ErrorAction SilentlyContinue } catch {}
         try { New-NetIPAddress -InterfaceIndex $_.ifIndex -IPAddress 10.0.3.15 -PrefixLength 24 -DefaultGateway 10.0.3.1 -ErrorAction Stop | Out-Null; Write-Host 'New-NetIPAddress ok' } catch { Write-Host ("New-NetIPAddress err " + $_.Exception.Message) }
         try { Set-DnsClientServerAddress -InterfaceIndex $_.ifIndex -ServerAddresses @('8.8.8.8','1.1.1.1') -ErrorAction SilentlyContinue } catch {}
+        # TCP checksum/segmentation offload is broken under QEMU emulation
+        # (the NIC 'sends' frames whose TCP checksum QEMU never computes, so
+        # every TCP packet is dropped — while ICMP, which has no TCP
+        # checksum, works fine). This is why the guest pinged the gateway but
+        # never established a single TCP connection. Disable all TCP/UDP
+        # offload + LSO so Windows computes checksums itself.
+        try { Disable-NetAdapterChecksumOffload -Name $n -ErrorAction SilentlyContinue } catch {}
+        try { Disable-NetAdapterLso -Name $n -ErrorAction SilentlyContinue } catch {}
+        try { Set-NetAdapterAdvancedProperty -Name $n -RegistryKeyword '*TCPChecksumOffloadIPv4' -RegistryValue 0 -ErrorAction SilentlyContinue } catch {}
+        try { Set-NetAdapterAdvancedProperty -Name $n -RegistryKeyword '*UDPChecksumOffloadIPv4' -RegistryValue 0 -ErrorAction SilentlyContinue } catch {}
+        try { Set-NetAdapterAdvancedProperty -Name $n -RegistryKeyword '*LsoV2IPv4' -RegistryValue 0 -ErrorAction SilentlyContinue } catch {}
     }
+    # Now that the tap NIC has an address + gateway, mark the network
+    # Private AND hard-disable the firewall — a Public/unidentified profile
+    # makes Windows silently drop inbound frames (the asymmetric 'guest can
+    # ping out but host can't reach in' failure) even with the firewall off.
+    try { Get-NetConnectionProfile -ErrorAction SilentlyContinue | Set-NetConnectionProfile -NetworkCategory Private -ErrorAction SilentlyContinue } catch {}
+    try { Set-NetFirewallProfile -All -Enabled False -ErrorAction SilentlyContinue } catch {}
+    try { & netsh advfirewall set allprofiles state off 2>$null | Out-Null } catch {}
+    Write-Host ('FW state: ' + ((Get-NetFirewallProfile -ErrorAction SilentlyContinue | ForEach-Object { $_.Name + '=' + $_.Enabled }) -join ' '))
+    Write-Host ('Profile: ' + ((Get-NetConnectionProfile -ErrorAction SilentlyContinue | ForEach-Object { $_.InterfaceAlias + '=' + $_.NetworkCategory }) -join ' '))
     Start-Sleep -Seconds 6
     $now = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.IPAddress -notlike '169.254*' } | Select-Object -First 1
     Write-Host ("STATIC-IP-RESULT ip=" + $now.IPAddress)
