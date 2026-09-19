@@ -188,26 +188,26 @@ if ($windowsOpenSshCapabilities) {
     $windowsOpenSshCapabilities | Remove-WindowsCapability -Online | Out-Null
 }
 
-Write-Status 'STEP: download-openssh-zip'
-# see https://github.com/PowerShell/Win32-OpenSSH/releases
-# renovate: datasource=github-releases depName=PowerShell/Win32-OpenSSH
-$openSshVersion = '10.0.0.0p2-Preview'
+Write-Status 'STEP: extract-openssh-zip'
+# The guest cannot reach the internet through QEMU/slirp (ICMP to the
+# gateway works but TCP never establishes and DNS never resolves — a known
+# slirp quirk), so OpenSSH-Win64.zip is baked onto the provision ISO by
+# fetch-windows-drivers.sh. Find it on whichever CD drive mounted the ISO.
 $localZipPath = "$env:TEMP\OpenSSH-Win64.zip"
-$dlTries = 0
-while ($true) {
-    $dlTries++
-    try {
-        Write-Host ("openssh download attempt " + $dlTries)
-        (New-Object System.Net.WebClient).DownloadFile(
-            "https://github.com/PowerShell/Win32-OpenSSH/releases/download/$openSshVersion/OpenSSH-Win64.zip",
-            $localZipPath)
-        Write-Host 'openssh download OK'
-        break
-    } catch {
-        Write-Host ("openssh download failed: " + $_.Exception.Message)
-        Write-Com1 "openssh download failed, retrying..."
-        Start-Sleep -Seconds 5
-    }
+$cdZip = $null
+foreach ($d in 'D','E','F','G','H') {
+    $p = "${d}:\OpenSSH-Win64.zip"
+    if (Test-Path $p) { $cdZip = $p; break }
+}
+if (-not $cdZip) {
+    Write-Host 'OpenSSH-Win64.zip not found on any CD drive — falling back to download'
+    Write-Status 'STEP: download-openssh-zip'
+    (New-Object System.Net.WebClient).DownloadFile(
+        "https://github.com/PowerShell/Win32-OpenSSH/releases/download/10.0.0.0p2-Preview/OpenSSH-Win64.zip",
+        $localZipPath)
+} else {
+    Write-Host ("extracting " + $cdZip)
+    Copy-Item $cdZip $localZipPath
 }
 if (Test-Path $openSshHome) {
     Remove-Item -Recurse -Force $openSshHome

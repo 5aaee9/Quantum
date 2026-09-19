@@ -71,6 +71,10 @@ source "qemu" "windows-2025-runner" {
     "drivers/viostor/2k25/amd64/*.inf",
     "drivers/viostor/2k25/amd64/*.sys",
     "drivers/virtio-win-guest-tools.exe",
+    # OpenSSH rides on the ISO — the guest can't reach the internet through
+    # QEMU/slirp (ICMP to the gateway works but TCP never establishes), so
+    # the first-logon script extracts it from the CD rather than download.
+    "drivers/OpenSSH-Win64.zip",
   ]
 
   # Packer talks to Windows over OpenSSH (installed by the first-logon

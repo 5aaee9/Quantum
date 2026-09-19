@@ -69,4 +69,20 @@ for f in \
 done
 [ "$missing" = 0 ] || exit 1
 
-echo "virtio drivers ready under drivers/"
+# OpenSSH for the guest — the Windows guest cannot reach the internet
+# through QEMU/slirp (ICMP to the gateway works but TCP never establishes
+# and DNS never resolves — a known slirp quirk), so the Win32-OpenSSH zip
+# rides along on the provision ISO and the first-logon script extracts it
+# from E:\ instead of downloading it.
+OPENSSH_VER="10.0.0.0p2-Preview"
+OPENSSH_ZIP="drivers/OpenSSH-Win64.zip"
+if [ ! -f "$OPENSSH_ZIP" ]; then
+    curl -fSL --retry 3 -o "$OPENSSH_ZIP" \
+        "https://github.com/PowerShell/Win32-OpenSSH/releases/download/${OPENSSH_VER}/OpenSSH-Win64.zip"
+fi
+if [ ! -s "$OPENSSH_ZIP" ]; then
+    echo "error: expected $OPENSSH_ZIP after download" >&2
+    exit 1
+fi
+
+echo "virtio drivers + OpenSSH ready under drivers/"
