@@ -115,6 +115,12 @@ try {
     Write-Host ("PING 10.0.2.2 = " + $ping)
     try { $tnc = (Test-NetConnection -ComputerName 10.0.2.2 -Port 8080 -WarningAction SilentlyContinue).TcpTestSucceeded } catch { $tnc = $false }
     Write-Host ("TCP 10.0.2.2:8080 = " + $tnc)
+    # outbound-internet probes: resolve a name via slirp's dns (10.0.2.3)
+    # then TCP:443 to a public host. These tell whether slirp NATs real
+    # outbound traffic for this guest or only answers the gateway ping.
+    try { $dns = (Resolve-DnsName -Name github.com -Server 10.0.2.3 -ErrorAction Stop | Where-Object {$_.IPAddress} | Select-Object -First 1).IPAddress; Write-Host ("DNS github.com -> " + $dns) } catch { Write-Host ("DNS github.com err " + $_.Exception.Message) }
+    try { $t443 = (Test-NetConnection -ComputerName github.com -Port 443 -WarningAction SilentlyContinue).TcpTestSucceeded } catch { $t443 = $false }
+    Write-Host ("TCP github.com:443 = " + $t443)
     # full ipconfig /all — every adapter + DHCP/server/lease lines, no
     # filter, so nothing is hidden by the grep pattern.
     Write-Host '---- ipconfig /all ----'
@@ -187,13 +193,18 @@ Write-Status 'STEP: download-openssh-zip'
 # renovate: datasource=github-releases depName=PowerShell/Win32-OpenSSH
 $openSshVersion = '10.0.0.0p2-Preview'
 $localZipPath = "$env:TEMP\OpenSSH-Win64.zip"
+$dlTries = 0
 while ($true) {
+    $dlTries++
     try {
+        Write-Host ("openssh download attempt " + $dlTries)
         (New-Object System.Net.WebClient).DownloadFile(
             "https://github.com/PowerShell/Win32-OpenSSH/releases/download/$openSshVersion/OpenSSH-Win64.zip",
             $localZipPath)
+        Write-Host 'openssh download OK'
         break
     } catch {
+        Write-Host ("openssh download failed: " + $_.Exception.Message)
         Write-Com1 "openssh download failed, retrying..."
         Start-Sleep -Seconds 5
     }
