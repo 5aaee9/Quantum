@@ -41,7 +41,7 @@ function Write-Status($text) {
     try { Add-Content -Path 'A:\STATUS.TXT' -Value $text -ErrorAction Stop } catch {}
     try {
         $q = [uri]::EscapeDataString($text)
-        Invoke-WebRequest -Uri "http://10.0.2.2:8080/?s=$q" -UseBasicParsing -TimeoutSec 5 | Out-Null
+        Invoke-WebRequest -Uri "http://10.0.3.1:8080/?s=$q" -UseBasicParsing -TimeoutSec 5 | Out-Null
     } catch {}
 }
 Write-Com1 'bootstrap starting'
@@ -75,26 +75,28 @@ try {
     # firewall off — the build VM must accept the forwarded SSH connection.
     try { Set-NetFirewallProfile -All -Enabled False -ErrorAction SilentlyContinue } catch {}
     try { & netsh advfirewall set allprofiles state off 2>$null | Out-Null } catch {}
-    # Assign slirp's fixed guest address statically on the Up NIC. QEMU user
-    # net is always 10.0.2.0/24 (gw .2, dns .3, guest .15).
-    Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'Up' } | ForEach-Object {
+    # QEMU/slirp cannot carry TCP for this guest (ICMP to the gateway works
+    # but no TCP — inbound or outbound — ever establishes). The real network
+    # is the TAP device packer attached (MAC 52:54:00:aa:bb:cc, host side
+    # 10.0.3.1/24 NAT'd to eth0). Give it a static address + the host's NAT
+    # gateway + a real resolver. Prefer the tap NIC by MAC; fall back to any
+    # Up adapter if the tap NIC isn't enumerated yet.
+    $tapNic = Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.MacAddress -eq '52-54-00-AA-BB-CC' }
+    if (-not $tapNic) { $tapNic = Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'Up' } | Select-Object -First 1 }
+    $tapNic | ForEach-Object {
         $n = $_.Name
-        Write-Host "---- static 10.0.2.15 on '$n' (ifIndex $($_.ifIndex)) ----"
+        Write-Host "---- static 10.0.3.15 on '$n' (ifIndex $($_.ifIndex), mac $($_.MacAddress)) ----"
         # turn off DHCP + APIPA autoconfig so nothing overwrites the static
         try { Set-NetIPInterface -InterfaceIndex $_.ifIndex -Dhcp Disabled -ErrorAction SilentlyContinue } catch {}
         try { Remove-NetIPAddress -InterfaceIndex $_.ifIndex -AddressFamily IPv4 -Confirm:$false -ErrorAction SilentlyContinue } catch {}
         try { Remove-NetRoute -InterfaceIndex $_.ifIndex -DestinationPrefix '0.0.0.0/0' -Confirm:$false -ErrorAction SilentlyContinue } catch {}
-        # New-NetIPAddress is the native cmdlet — reliable where netsh's
-        # 'set address' silently no-ops on an already-APIPA'd interface.
-        try { New-NetIPAddress -InterfaceIndex $_.ifIndex -IPAddress 10.0.2.15 -PrefixLength 24 -DefaultGateway 10.0.2.2 -ErrorAction Stop | Out-Null; Write-Host 'New-NetIPAddress ok' } catch { Write-Host ("New-NetIPAddress err " + $_.Exception.Message) }
-        # dns only — do NOT re-run netsh 'set address' (it resets the
-        # interface to DHCP and wipes the New-NetIPAddress result).
-        try { Set-DnsClientServerAddress -InterfaceIndex $_.ifIndex -ServerAddresses 10.0.2.3 -ErrorAction SilentlyContinue } catch {}
+        try { New-NetIPAddress -InterfaceIndex $_.ifIndex -IPAddress 10.0.3.15 -PrefixLength 24 -DefaultGateway 10.0.3.1 -ErrorAction Stop | Out-Null; Write-Host 'New-NetIPAddress ok' } catch { Write-Host ("New-NetIPAddress err " + $_.Exception.Message) }
+        try { Set-DnsClientServerAddress -InterfaceIndex $_.ifIndex -ServerAddresses @('8.8.8.8','1.1.1.1') -ErrorAction SilentlyContinue } catch {}
     }
     Start-Sleep -Seconds 6
     $now = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.IPAddress -notlike '169.254*' } | Select-Object -First 1
     Write-Host ("STATIC-IP-RESULT ip=" + $now.IPAddress)
-    Write-Host ("PING-AFTER-STATIC " + (Test-Connection -ComputerName 10.0.2.2 -Count 2 -Quiet -ErrorAction SilentlyContinue))
+    Write-Host ("PING-AFTER-STATIC " + (Test-Connection -ComputerName 10.0.3.1 -Count 2 -Quiet -ErrorAction SilentlyContinue))
     $ip = (Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.IPAddress -notlike '169.254*' } | Select-Object -First 1).IPAddress
     Write-Status ("SCRIPT-STARTED adapters=" + ((Get-NetAdapter -ErrorAction SilentlyContinue | ForEach-Object { $_.Name + ':' + $_.Status }) -join ',') + " ip=$ip")
     # also paint the network state on the console so a VNC/monitor
@@ -108,17 +110,12 @@ try {
     # Sent=0 means the driver/QEMU TX path is dead (no IP config will help);
     # Sent>0 but no slirp traffic means frames leave but get dropped.
     Get-NetAdapterStatistics -ErrorAction SilentlyContinue | Format-Table Name,ReceivedBytes,SentBytes -Auto | Out-String | Write-Host
-    # can the guest reach slirp at all? a reachable 10.0.2.2 means the NIC
-    # dataplane works and only DHCP/sshd is missing; unreachable means the
-    # virtio-net device isn't actually exchanging frames with user.0.
-    $ping = Test-Connection -ComputerName 10.0.2.2 -Count 2 -Quiet -ErrorAction SilentlyContinue
-    Write-Host ("PING 10.0.2.2 = " + $ping)
-    try { $tnc = (Test-NetConnection -ComputerName 10.0.2.2 -Port 8080 -WarningAction SilentlyContinue).TcpTestSucceeded } catch { $tnc = $false }
-    Write-Host ("TCP 10.0.2.2:8080 = " + $tnc)
-    # outbound-internet probes: resolve a name via slirp's dns (10.0.2.3)
-    # then TCP:443 to a public host. These tell whether slirp NATs real
-    # outbound traffic for this guest or only answers the gateway ping.
-    try { $dns = (Resolve-DnsName -Name github.com -Server 10.0.2.3 -ErrorAction Stop | Where-Object {$_.IPAddress} | Select-Object -First 1).IPAddress; Write-Host ("DNS github.com -> " + $dns) } catch { Write-Host ("DNS github.com err " + $_.Exception.Message) }
+    # the tap NIC gives real TCP + internet via the host's NAT (10.0.3.1).
+    $ping = Test-Connection -ComputerName 10.0.3.1 -Count 2 -Quiet -ErrorAction SilentlyContinue
+    Write-Host ("PING 10.0.3.1 = " + $ping)
+    try { $tnc = (Test-NetConnection -ComputerName 10.0.3.1 -Port 8080 -WarningAction SilentlyContinue).TcpTestSucceeded } catch { $tnc = $false }
+    Write-Host ("TCP 10.0.3.1:8080 = " + $tnc)
+    try { $dns = (Resolve-DnsName -Name github.com -ErrorAction Stop | Where-Object {$_.IPAddress} | Select-Object -First 1).IPAddress; Write-Host ("DNS github.com -> " + $dns) } catch { Write-Host ("DNS github.com err " + $_.Exception.Message) }
     try { $t443 = (Test-NetConnection -ComputerName github.com -Port 443 -WarningAction SilentlyContinue).TcpTestSucceeded } catch { $t443 = $false }
     Write-Host ("TCP github.com:443 = " + $t443)
     # full ipconfig /all — every adapter + DHCP/server/lease lines, no
@@ -326,7 +323,7 @@ function Write-Status($text) {
     try { Add-Content -Path 'A:\STATUS.TXT' -Value $text -ErrorAction Stop } catch {}
     try {
         $q = [uri]::EscapeDataString($text)
-        Invoke-WebRequest -Uri "http://10.0.2.2:8080/?s=$q" -UseBasicParsing -TimeoutSec 5 | Out-Null
+        Invoke-WebRequest -Uri "http://10.0.3.1:8080/?s=$q" -UseBasicParsing -TimeoutSec 5 | Out-Null
     } catch {}
 }
 try {

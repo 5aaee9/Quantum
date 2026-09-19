@@ -88,9 +88,30 @@ jobs:
           # 10.0.2.2 gateway to :8080. Capture every request (incl. the
           # 'GET /?s=...' status query) to a log in the workspace (a path
           # the runner user can definitely write). 8080 > 1024, no sudo.
+          # Real TAP network for the Windows guest. QEMU/slirp cannot carry
+          # TCP for it at all (ICMP to the gateway works but no TCP — hostfwd
+          # inbound or outbound — ever establishes, a known slirp<->Windows
+          # quirk), so the build attaches a TAP device instead. Give the host
+          # side 10.0.3.1/24 and NAT it to eth0 so the guest gets real TCP
+          # and real internet (needed for the git/pwsh/cloudbase-init
+          # provisioner downloads).
+          sudo ip tuntap add dev tap0 mode tap user root 2>/dev/null || sudo ip tuntap add dev tap0 mode tap
+          sudo ip addr add 10.0.3.1/24 dev tap0 2>/dev/null || true
+          sudo ip link set dev tap0 up
+          sudo sysctl -w net.ipv4.ip_forward=1
+          # NAT the tap subnet out eth0 for guest internet.
+          sudo iptables -t nat -C POSTROUTING -s 10.0.3.0/24 -j MASQUERADE 2>/dev/null || \
+            sudo iptables -t nat -A POSTROUTING -s 10.0.3.0/24 -j MASQUERADE
+          sudo iptables -C FORWARD -i tap0 -j ACCEPT 2>/dev/null || sudo iptables -A FORWARD -i tap0 -j ACCEPT
+          sudo iptables -C FORWARD -o tap0 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || \
+            sudo iptables -A FORWARD -o tap0 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+
+          # host listener: the guest reports diagnostics over the tap
+          # network's 10.0.3.1 gateway to :8080. Capture every request to a
+          # log in the workspace (a path the runner user can write).
           STATUS_LOG="$PWD/guest-status.log"
           touch "$STATUS_LOG"
-          (while true; do nc -l 8080 >>"$STATUS_LOG" 2>/dev/null; done) &
+          (while true; do nc -l -s 10.0.3.1 -p 8080 >>"$STATUS_LOG" 2>/dev/null; sleep 1; done) &
 
           # windows build: run packer in the background and snapshot the
           # guest display every 60s so a failed run still shows which

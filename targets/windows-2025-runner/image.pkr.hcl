@@ -83,6 +83,16 @@ source "qemu" "windows-2025-runner" {
   communicator           = "ssh"
   ssh_username           = var.ssh_username
   ssh_password           = var.ssh_password
+  # SSH straight to the guest's tap-NIC address, NOT via slirp hostfwd.
+  # QEMU user-mode (slirp) cannot carry TCP for this Windows guest at all
+  # — ICMP to the gateway works but no TCP connection (inbound hostfwd OR
+  # outbound) ever establishes, a known slirp<->Windows quirk. The build
+  # therefore attaches a real TAP device (created by the workflow Build
+  # step, NAT'd to the runner's eth0) on which the guest has a normal,
+  # fully-working TCP/IP stack. ssh_host/ssh_port make packer dial the tap
+  # address directly instead of the forwarded localhost port.
+  ssh_host               = "10.0.3.15"
+  ssh_port               = 22
   # 90min is generous — sshd comes up within a few minutes of the desktop
   # appearing; a longer wait just delays discovering a broken bootstrap.
   ssh_timeout            = "90m"
@@ -111,6 +121,13 @@ source "qemu" "windows-2025-runner" {
     # on (OOBE prompt, login, error dialog, etc).
     ["-serial", "file:windows-2025-runner-serial.log"],
     ["-monitor", "unix:windows-2025-runner-monitor.sock,server,nowait"],
+    # Real TAP network — slirp can't carry TCP for this guest (see
+    # ssh_host note). The workflow Build step pre-creates tap0
+    # (10.0.3.1/24, NAT'd to eth0); the guest gets 10.0.3.15 statically.
+    # MAC 52:54:00:aa:bb:cc marks this NIC so the first-logon script can
+    # pick it out from packer's own (slirp, non-functional) NIC.
+    ["-netdev", "tap,id=tap0,ifname=tap0,script=no,downscript=no"],
+    ["-device", "virtio-net-pci,netdev=tap0,mac=52:54:00:aa:bb:cc"],
     # NOTE: do NOT add a -drive entry here. A `-drive` in qemuargs makes
     # packer drop *all* of its own generated -drive args (boot disk, the
     # Windows install ISO, the provision CD, and the EFI pflash), so QEMU
