@@ -104,6 +104,10 @@ try {
     Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | Format-Table InterfaceAlias,IPAddress -Auto | Out-String | Write-Host
     Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Format-Table ifIndex,NextHop -Auto | Out-String | Write-Host
     Get-PnpDevice -Class Net -ErrorAction SilentlyContinue | Format-Table Status,FriendlyName -Auto | Out-String | Write-Host
+    # PacketsSent/Received reveals whether the NIC dataplane works at all:
+    # Sent=0 means the driver/QEMU TX path is dead (no IP config will help);
+    # Sent>0 but no slirp traffic means frames leave but get dropped.
+    Get-NetAdapterStatistics -ErrorAction SilentlyContinue | Format-Table Name,ReceivedBytes,SentBytes -Auto | Out-String | Write-Host
     # can the guest reach slirp at all? a reachable 10.0.2.2 means the NIC
     # dataplane works and only DHCP/sshd is missing; unreachable means the
     # virtio-net device isn't actually exchanging frames with user.0.
