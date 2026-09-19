@@ -87,8 +87,8 @@ try {
         # New-NetIPAddress is the native cmdlet — reliable where netsh's
         # 'set address' silently no-ops on an already-APIPA'd interface.
         try { New-NetIPAddress -InterfaceIndex $_.ifIndex -IPAddress 10.0.2.15 -PrefixLength 24 -DefaultGateway 10.0.2.2 -ErrorAction Stop | Out-Null; Write-Host 'New-NetIPAddress ok' } catch { Write-Host ("New-NetIPAddress err " + $_.Exception.Message) }
-        & netsh interface ip set address name="$n" static 10.0.2.15 255.255.255.0 10.0.2.2 | Out-String | Write-Host
-        & netsh interface ip set dns    name="$n" static 10.0.2.3 | Out-String | Write-Host
+        # dns only — do NOT re-run netsh 'set address' (it resets the
+        # interface to DHCP and wipes the New-NetIPAddress result).
         try { Set-DnsClientServerAddress -InterfaceIndex $_.ifIndex -ServerAddresses 10.0.2.3 -ErrorAction SilentlyContinue } catch {}
     }
     Start-Sleep -Seconds 6
