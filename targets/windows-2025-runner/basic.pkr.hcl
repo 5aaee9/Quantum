@@ -51,12 +51,12 @@ variable "efi_firmware_vars" {
 #     link, e.g. https://alist.indexyz.me/d/Local/Isos/windows-server-2025-eval.iso
 # Can always be overridden with -var / PKR_VAR_* / the env vars below.
 variable "iso_url" {
-  type = string
+  type    = string
   default = env("WINDOWS_2025_ISO_URL") != "" ? env("WINDOWS_2025_ISO_URL") : "https://software-static.download.prss.microsoft.com/dbazure/998969d5-f34g-4e03-ac9d-1f9786c66749/26100.32230.260111-0550.lt_release_svc_refresh_SERVER_EVAL_x64FRE_en-us.iso"
 }
 
 variable "iso_checksum" {
-  type = string
+  type    = string
   default = env("WINDOWS_2025_ISO_CHECKSUM") != "" ? env("WINDOWS_2025_ISO_CHECKSUM") : "sha256:7b052573ba7894c9924e3e87ba732ccd354d18cb75a883efa9b900ea125bfd51"
 }
 

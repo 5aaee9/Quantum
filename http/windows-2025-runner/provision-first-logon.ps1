@@ -1,371 +1,206 @@
-# Runs from FirstLogonCommands (autounattend.xml), elevated as the local
-# `packer` user via the provision floppy. Brings up OpenSSH so packer can
-# take over the rest of the provisioning. Everything is logged because
-# there is no interactive user to watch the console.
+# provision-first-logon.ps1 — FULLY OFFLINE Windows runner image provisioner.
 #
-# Mirrors rgl/windows-vagrant provision-openssh.ps1 (proven on QEMU/KVM):
-# https://github.com/rgl/windows-vagrant
-# Write a marker to COM1 as the *very first* statement — before anything
-# that can fail — so the serial log proves the script actually ran. QEMU
-# captures COM1 to windows-2025-runner-serial.log.
-$script:com1 = $null
-foreach ($m in 'file','serialport') {
-    try {
-        if ($m -eq 'file') {
-            $script:com1 = [System.IO.File]::OpenWrite('\\.\COM1')
-        } else {
-            $script:com1 = New-Object System.IO.Ports.SerialPort COM1
-            $script:com1.Open()
-        }
-        if ($script:com1) { break }
-    } catch { $script:com1 = $null }
+# Why offline: this Windows Server 2025 guest cannot establish a single TCP
+# connection under QEMU — we tried every NIC model (virtio NetKVM 2k22+2k25,
+# e1000, e1000e, rtl8139) and every backend (slirp, tap); ICMP and UDP flow
+# but TCP never emits a single segment. So packer uses communicator="none"
+# and this script does ALL provisioning locally, then syspreps + powers off.
+# Packer completes when QEMU exits.
+#
+# Payloads: specialize copies the provision CD to C:\provision\ (the CD drive
+# letter is unstable / the CD may be gone by first-logon), so everything
+# below reads from that fixed on-disk dir — no downloads, no network.
+$ErrorActionPreference = 'Continue'   # never die — always reach sysprep+shutdown
+
+# WRITE A BREADCRUMB FIRST — the simplest possible proof this script ran.
+# Write to BOTH C:\Windows\Temp (always writable by any user) and C:\ so at
+# least one survives. No Start-Transcript (it can block in first-logon).
+foreach ($tf in 'C:\Windows\Temp\provision.trace','C:\provision.trace') {
+    Set-Content $tf "start $(Get-Date -Format HH:mm:ss)" -Force -ErrorAction SilentlyContinue
 }
-function Write-Com1($msg) {
-    Write-Host $msg
-    if (-not $script:com1) { return }
-    try {
-        $line = "[first-logon] $msg`r`n"
-        if ($script:com1 -is [System.IO.FileStream]) {
-            $b = [Text.Encoding]::ASCII.GetBytes($line)
-            $script:com1.Write($b, 0, $b.Length); $script:com1.Flush()
-        } else {
-            $script:com1.WriteLine("[first-logon] $msg")
-        }
-    } catch {}
+# log to disk AND to COM1 — the serial port reaches QEMU's -serial file: so
+# we get a live, host-readable trace of every step. The specialize COM1
+# marker proves `cmd /c "echo X > COM1"` works from Windows under QEMU, so
+# reuse exactly that mechanism (no `mode` — specialize's bare `echo`
+# already wrote through, and `mode COM1` can block on some serial setups).
+function Log($m) {
+    $line = "$(Get-Date -Format HH:mm:ss) $m"
+    Write-Host $line
+    try { & cmd /c "echo PROV: $line > COM1" 2>$null | Out-Null } catch {}
+    foreach ($tf in 'C:\Windows\Temp\provision.trace','C:\provision.trace') { Add-Content $tf -Value $line -ErrorAction SilentlyContinue }
 }
 
-# report a line to the host via slirp's 10.0.2.2 gateway: the CI runner
-# listens on :8080 and logs every request. Works even when COM1/A: don't.
-function Write-Status($text) {
-    Write-Com1 $text
-    try { Add-Content -Path 'A:\STATUS.TXT' -Value $text -ErrorAction Stop } catch {}
-    try {
-        $q = [uri]::EscapeDataString($text)
-        Invoke-WebRequest -Uri "http://10.0.3.1:8080/?s=$q" -UseBasicParsing -TimeoutSec 5 | Out-Null
-    } catch {}
+# sentinel: if this already ran (a post-sysprep OOBE re-triggered
+# FirstLogonCommands), just power off — never loop provision->sysprep->oobe.
+if (Test-Path 'C:\provision-done.marker') {
+    Log 'marker present — powering off'
+    & shutdown /p /f | Out-Null
+    return
 }
-Write-Com1 'bootstrap starting'
+New-Item 'C:\provision-done.marker' -ItemType File -Force | Out-Null
 
-# --- NIC self-heal ---------------------------------------------------------
-# If no adapter has an IPv4 address the virtio NetKVM driver never bound;
-# force-install every driver .inf on the provision CD so the NIC comes up
-# before we do anything network-dependent. Runs elevated (UAC is off).
-try {
-    # QEMU slirp's BOOTP/DHCP server cannot serve a Windows guest: Windows
-    # sends DISCOVER then immediately a sanity-check REQUEST, which slirp
-    # mishandles — a known QEMU/slirp quirk (a Linux guest on the identical
-    # -netdev user setup gets 10.0.2.15 instantly; this guest never does).
-    # So: heal the NIC driver if needed, then set slirp's deterministic
-    # static address directly. DHCP is not attempted.
-    # Always install the virtio guest-tools — it binds the virtio drivers
-    # properly AND installs qemu-ga (the guest agent), which gives the QEMU
-    # monitor a guest-network-get-interfaces channel that needs no guest
-    # network — the only reliable way to read the guest's real IP state.
-    foreach ($d in 'D','E','F','G','H') {
-        $gt = "${d}:\virtio-win-guest-tools.exe"
-        if (Test-Path $gt) { Write-Status 'gt-install'; Start-Process $gt -ArgumentList '/install','/quiet','/norestart' -Wait }
-        if (Test-Path "${d}:\*.inf") { & pnputil /add-driver "${d}:\*.inf" /subdirs /install 2>$null | Out-Null }
+# we were invoked by the ProvisionOnBoot scheduled task (registered in
+# specialize) — delete it now so a post-sysprep OOBE boot doesn't re-run us.
+schtasks /delete /tn ProvisionOnBoot /f 2>$null | Out-Null
+
+# DEAD-MAN SWITCH: a detached process that sleeps 25min then force-powers
+# off. This is a separate powershell process guaranteed to fire — if
+# provisioning hangs the VM still powers off so packer completes. Success
+# path kills it via $watchdog below before the real sysprep+shutdown.
+$watchdog = Start-Process powershell -PassThru -WindowStyle Hidden `
+    -ArgumentList '-NoProfile','-Command','Start-Sleep 1500; shutdown /p /f' -ErrorAction SilentlyContinue
+Log "watchdog armed: poweroff in 25min if provisioning hangs"
+
+# resolve the payload dir: prefer the on-disk staging copy (C:\provision),
+# else scan CD-ROM drives for the PROVISION volume.
+$pv = $null
+foreach ($cand in 'C:\provision', (Get-CimInstance Win32_Volume -Filter "DriveType=5" | ForEach-Object { "$($_.DriveLetter)\" })) {
+    if (Test-Path "$cand\virtio-win-guest-tools.exe") { $pv = $cand.TrimEnd('\'); break }
+}
+if (-not $pv) { $pv = 'C:\provision' }
+Log "provision content: $pv"
+Get-CimInstance Win32_Volume | ForEach-Object { Log "  vol $($_.DriveLetter) label=$($_.FileSystemLabel) type=$($_.DriveType)" }
+
+function Payload($name) {
+    foreach ($p in "$pv\$name", "$pv\payloads\$name") {
+        if (Test-Path $p) { return $p }
     }
-    & pnputil /scan-devices 2>$null | Out-Null
-    Start-Sleep -Seconds 12
-    # start the QEMU guest agent so the monitor can query guest interfaces.
-    foreach ($svc in 'QEMU-GA','QEMU Guest Agent','QEMU Guest Agent VSS Provider') {
-        try { Set-Service $svc -StartupType Automatic -ErrorAction SilentlyContinue; Start-Service $svc -ErrorAction SilentlyContinue } catch {}
+    Log "  !! payload $name NOT FOUND"
+    return $null
+}
+
+# run a command with a hard timeout so a hung installer can't stall the
+# whole build (packer has a 90m shutdown_timeout — we must power off).
+function Run($exe, [string[]]$argz, [int]$timeoutSec = 600) {
+    Log "  > $exe $($argz -join ' ')"
+    $proc = Start-Process -FilePath $exe -ArgumentList $argz -PassThru -NoNewWindow -ErrorAction SilentlyContinue
+    if (-not $proc) { Log "  (could not start)"; return }
+    if (-not $proc.WaitForExit($timeoutSec * 1000)) {
+        Log "  (TIMEOUT after ${timeoutSec}s — killing)"
+        try { $proc.Kill() } catch {}
     }
-    # firewall off — the build VM must accept the forwarded SSH connection.
-    try { Set-NetFirewallProfile -All -Enabled False -ErrorAction SilentlyContinue } catch {}
-    try { & netsh advfirewall set allprofiles state off 2>$null | Out-Null } catch {}
-    # QEMU/slirp cannot carry TCP for this guest (ICMP to the gateway works
-    # but no TCP — inbound or outbound — ever establishes). The real network
-    # is the TAP device packer attached (MAC 52:54:00:aa:bb:cc, host side
-    # 10.0.3.1/24 NAT'd to eth0). Give it a static address + the host's NAT
-    # gateway + a real resolver. Prefer the tap NIC by MAC; fall back to any
-    # Up adapter if the tap NIC isn't enumerated yet.
-    $tapNic = Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.MacAddress -eq '52-54-00-AA-BB-CC' }
-    if (-not $tapNic) { $tapNic = Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'Up' } | Select-Object -First 1 }
-    # disable every OTHER adapter — packer also attaches a (dead) slirp NIC
-    # and Windows' weak-host routing can leak the tap subnet's ARP/ICMP out
-    # the wrong interface, leaving host->guest unreachable. One live NIC
-    # removes all ambiguity.
-    $tapIf = $tapNic.ifIndex
-    Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.ifIndex -ne $tapIf } | ForEach-Object {
-        Write-Host ("disabling stray nic " + $_.Name + " mac " + $_.MacAddress)
-        try { Disable-NetAdapter -Name $_.Name -Confirm:$false -ErrorAction SilentlyContinue } catch {}
+    Log "  (exit $($proc.ExitCode))"
+}
+
+Log '=== virtio drivers via pnputil (skip the guest-tools bundle — it hangs) ==='
+# the virtio-win-guest-tools MSI wrapper hangs under this environment; just
+# pnputil the individual .inf drivers instead (that's all we actually need).
+foreach ($inf in (Get-ChildItem "$pv\*.inf" -ErrorAction SilentlyContinue)) {
+    Run 'pnputil' @('/add-driver', $inf.FullName, '/install') 60
+}
+& pnputil /scan-devices 2>$null | Out-Null
+
+Log '=== OpenSSH (sshd) ==='
+$ossh = Payload 'OpenSSH-Win64.zip'
+if ($ossh) {
+    $sshHome = 'C:\Program Files\OpenSSH'
+    Run 'powershell' @('-NoProfile','-Command',"Expand-Archive '$ossh' '$sshHome' -Force") 120
+    $nested = Get-ChildItem $sshHome -Directory -Filter 'OpenSSH-Win64' -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($nested) { Get-ChildItem $nested.FullName | Move-Item $sshHome -Force -ErrorAction SilentlyContinue }
+    if (Test-Path "$sshHome\install-sshd.ps1") { Run 'powershell' @('-NoProfile','-File',"$sshHome\install-sshd.ps1") 120 }
+    Set-Service sshd -StartupType Automatic -ErrorAction SilentlyContinue
+    Set-Service ssh-agent -StartupType Automatic -ErrorAction SilentlyContinue
+}
+
+Log '=== git ==='
+$git = Payload 'Git-64-bit.exe'
+if ($git) { Run $git @('/VERYSILENT','/NORESTART','/NOCANCEL','/SP-','/SUPPRESSMSGBOXES') 300 }
+if (Test-Path 'C:\Program Files\Git\bin\git.exe') {
+    & 'C:\Program Files\Git\bin\git.exe' config --system --add safe.directory '*' 2>$null
+    & 'C:\Program Files\Git\bin\git.exe' config --system core.longpaths true 2>$null
+    & 'C:\Program Files\Git\bin\git.exe' config --system core.autocrlf false 2>$null
+    & 'C:\Program Files\Git\bin\git.exe' config --system core.symlinks true 2>$null
+}
+
+Log '=== pwsh ==='
+$pwsh = Payload 'PowerShell-win-x64.msi'
+if ($pwsh) { Run 'msiexec' @('/i', $pwsh, '/qn', '/norestart', 'ADD_PATH=1', 'USE_MU=0', 'ENABLE_MU=0') 300 }
+
+Log '=== cloudbase-init ==='
+$cb = Payload 'CloudbaseInitSetup.msi'
+if ($cb) { Run 'msiexec' @('/i', $cb, '/qn', '/norestart') 300 }
+$cbHome = 'C:\Program Files\Cloudbase Solutions\Cloudbase-Init'
+if (Test-Path $cbHome) {
+    # write cloudbase-init.conf with a hardcoded standard plugin list — the
+    # `python -c "import cloudbaseinit; print(CONF.plugins)"` enumeration is
+    # too slow/fragile in this environment, so use the documented defaults.
+    $cbConf = "$cbHome\conf\cloudbase-init.conf"
+    if (Test-Path $cbConf) { Move-Item $cbConf "$cbConf.orig" -Force }
+    Set-Content -Encoding ascii $cbConf @"
+[DEFAULT]
+username=Administrator
+groups=Administrators
+first_logon_behaviour=no
+inject_user_password=true
+debug=true
+log_dir=$cbHome\log\
+log_file=cloudbase-init.log
+bsdtar_path=$cbHome\bin\bsdtar.exe
+mtools_path=$cbHome\bin\
+check_latest_version=false
+plugins=cloudbaseinit.plugins.common.mtu.MTUPlugin,
+         cloudbaseinit.plugins.common.sethostname.SetHostNamePlugin,
+         cloudbaseinit.plugins.windows.createuser.CreateUserPlugin,
+         cloudbaseinit.plugins.common.setuserpassword.SetUserPasswordPlugin,
+         cloudbaseinit.plugins.common.sshpublickeys.SetUserSSHPublicKeysPlugin,
+         cloudbaseinit.plugins.windows.extendvolumes.ExtendVolumesPlugin,
+         cloudbaseinit.plugins.windows.winrmlistener.ConfigWinRMListenerPlugin,
+         cloudbaseinit.plugins.windows.winrmcertificateauth.ConfigWinRMCertificateAuthPlugin,
+         cloudbaseinit.plugins.common.localscripts.LocalScriptsPlugin,
+         cloudbaseinit.plugins.common.userdata.UserDataPlugin
+metadata_services=cloudbaseinit.metadata.services.nocloudservice.NoCloudConfigDriveService,
+                  cloudbaseinit.metadata.services.configdrive.ConfigDriveService
+
+[config_drive]
+locations=cdrom
+types=iso
+"@
+    # regenerate sshd host keys on every clone (sysprep /generalize doesn't,
+    # and we delete them at seal) via a cloudbase-init LocalScript.
+    $ls = "$cbHome\LocalScripts"
+    New-Item -ItemType Directory -Force $ls | Out-Null
+    Set-Content -Encoding ascii "$ls\00-ssh-hostkeys.ps1" @'
+$kc = @("C:\Windows\System32\OpenSSH\ssh-keygen.exe","C:\Program Files\OpenSSH\ssh-keygen.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1
+if ($kc -and -not (Test-Path "C:\ProgramData\ssh\ssh_host_ed25519_key")) { & $kc -A; Restart-Service sshd -ErrorAction SilentlyContinue }
+'@
+}
+
+Log '=== actions-runner bundle ==='
+$zip = Payload 'actions-runner-win-x64.zip'
+if ($zip) {
+    if (-not (Get-LocalUser -Name runner -ErrorAction SilentlyContinue)) {
+        $pw = ConvertTo-SecureString '4tH2F34cEDRApj8Y@B26' -AsPlainText -Force
+        New-LocalUser -Name runner -Password $pw -FullName 'GitHub Runner' -PasswordNeverExpires -ErrorAction SilentlyContinue
     }
-    $tapNic | ForEach-Object {
-        $n = $_.Name
-        Write-Host "---- static 10.0.3.15 on '$n' (ifIndex $($_.ifIndex), mac $($_.MacAddress)) ----"
-        # turn off DHCP + APIPA autoconfig so nothing overwrites the static
-        try { Set-NetIPInterface -InterfaceIndex $_.ifIndex -Dhcp Disabled -ErrorAction SilentlyContinue } catch {}
-        try { Remove-NetIPAddress -InterfaceIndex $_.ifIndex -AddressFamily IPv4 -Confirm:$false -ErrorAction SilentlyContinue } catch {}
-        try { Remove-NetRoute -InterfaceIndex $_.ifIndex -DestinationPrefix '0.0.0.0/0' -Confirm:$false -ErrorAction SilentlyContinue } catch {}
-        try { New-NetIPAddress -InterfaceIndex $_.ifIndex -IPAddress 10.0.3.15 -PrefixLength 24 -DefaultGateway 10.0.3.1 -ErrorAction Stop | Out-Null; Write-Host 'New-NetIPAddress ok' } catch { Write-Host ("New-NetIPAddress err " + $_.Exception.Message) }
-        try { Set-DnsClientServerAddress -InterfaceIndex $_.ifIndex -ServerAddresses @('8.8.8.8','1.1.1.1') -ErrorAction SilentlyContinue } catch {}
-        # TCP checksum/segmentation offload is broken under QEMU emulation
-        # (the NIC 'sends' frames whose TCP checksum QEMU never computes, so
-        # every TCP packet is dropped — while ICMP, which has no TCP
-        # checksum, works fine). This is why the guest pinged the gateway but
-        # never established a single TCP connection. Disable all TCP/UDP
-        # offload + LSO so Windows computes checksums itself.
-        try { Disable-NetAdapterChecksumOffload -Name $n -ErrorAction SilentlyContinue } catch {}
-        try { Disable-NetAdapterLso -Name $n -ErrorAction SilentlyContinue } catch {}
-        try { Set-NetAdapterAdvancedProperty -Name $n -RegistryKeyword '*TCPChecksumOffloadIPv4' -RegistryValue 0 -ErrorAction SilentlyContinue } catch {}
-        try { Set-NetAdapterAdvancedProperty -Name $n -RegistryKeyword '*UDPChecksumOffloadIPv4' -RegistryValue 0 -ErrorAction SilentlyContinue } catch {}
-        try { Set-NetAdapterAdvancedProperty -Name $n -RegistryKeyword '*LsoV2IPv4' -RegistryValue 0 -ErrorAction SilentlyContinue } catch {}
-    }
-    # Now that the tap NIC has an address + gateway, mark the network
-    # Private AND hard-disable the firewall — a Public/unidentified profile
-    # makes Windows silently drop inbound frames (the asymmetric 'guest can
-    # ping out but host can't reach in' failure) even with the firewall off.
-    try { Get-NetConnectionProfile -ErrorAction SilentlyContinue | Set-NetConnectionProfile -NetworkCategory Private -ErrorAction SilentlyContinue } catch {}
-    try { Set-NetFirewallProfile -All -Enabled False -ErrorAction SilentlyContinue } catch {}
-    try { & netsh advfirewall set allprofiles state off 2>$null | Out-Null } catch {}
-    Write-Host ('FW state: ' + ((Get-NetFirewallProfile -ErrorAction SilentlyContinue | ForEach-Object { $_.Name + '=' + $_.Enabled }) -join ' '))
-    Write-Host ('Profile: ' + ((Get-NetConnectionProfile -ErrorAction SilentlyContinue | ForEach-Object { $_.InterfaceAlias + '=' + $_.NetworkCategory }) -join ' '))
-    Start-Sleep -Seconds 6
-    $now = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.IPAddress -notlike '169.254*' } | Select-Object -First 1
-    Write-Host ("STATIC-IP-RESULT ip=" + $now.IPAddress)
-    Write-Host ("PING-AFTER-STATIC " + (Test-Connection -ComputerName 10.0.3.1 -Count 2 -Quiet -ErrorAction SilentlyContinue))
-    $ip = (Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.IPAddress -notlike '169.254*' } | Select-Object -First 1).IPAddress
-    Write-Status ("SCRIPT-STARTED adapters=" + ((Get-NetAdapter -ErrorAction SilentlyContinue | ForEach-Object { $_.Name + ':' + $_.Status }) -join ',') + " ip=$ip")
-    # also paint the network state on the console so a VNC/monitor
-    # screendump shows it even when outbound pings can't reach the host.
-    Write-Host '==================== NETSTATE ===================='
-    Get-NetAdapter -ErrorAction SilentlyContinue | Format-Table Name,Status,MediaConnectionState,LinkSpeed,InterfaceDescription -Auto | Out-String | Write-Host
-    Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | Format-Table InterfaceAlias,IPAddress -Auto | Out-String | Write-Host
-    Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Format-Table ifIndex,NextHop -Auto | Out-String | Write-Host
-    Get-PnpDevice -Class Net -ErrorAction SilentlyContinue | Format-Table Status,FriendlyName -Auto | Out-String | Write-Host
-    # PacketsSent/Received reveals whether the NIC dataplane works at all:
-    # Sent=0 means the driver/QEMU TX path is dead (no IP config will help);
-    # Sent>0 but no slirp traffic means frames leave but get dropped.
-    Get-NetAdapterStatistics -ErrorAction SilentlyContinue | Format-Table Name,ReceivedBytes,SentBytes -Auto | Out-String | Write-Host
-    # the tap NIC gives real TCP + internet via the host's NAT (10.0.3.1).
-    $ping = Test-Connection -ComputerName 10.0.3.1 -Count 2 -Quiet -ErrorAction SilentlyContinue
-    Write-Host ("PING 10.0.3.1 = " + $ping)
-    try { $tnc = (Test-NetConnection -ComputerName 10.0.3.1 -Port 8080 -WarningAction SilentlyContinue).TcpTestSucceeded } catch { $tnc = $false }
-    Write-Host ("TCP 10.0.3.1:8080 = " + $tnc)
-    try { $dns = (Resolve-DnsName -Name github.com -ErrorAction Stop | Where-Object {$_.IPAddress} | Select-Object -First 1).IPAddress; Write-Host ("DNS github.com -> " + $dns) } catch { Write-Host ("DNS github.com err " + $_.Exception.Message) }
-    try { $t443 = (Test-NetConnection -ComputerName github.com -Port 443 -WarningAction SilentlyContinue).TcpTestSucceeded } catch { $t443 = $false }
-    Write-Host ("TCP github.com:443 = " + $t443)
-    # full ipconfig /all — every adapter + DHCP/server/lease lines, no
-    # filter, so nothing is hidden by the grep pattern.
-    Write-Host '---- ipconfig /all ----'
-    (& ipconfig /all) | ForEach-Object { Write-Host $_ }
-    Write-Host '=================================================='
-    # hold the NETSTATE block on screen for ~90s so a screendump catches it
-    # before the (network-bound) OpenSSH download step runs.
-    Start-Sleep -Seconds 90
-} catch { Write-Status ("SCRIPT-STARTED netcheck-err " + $_.Exception.Message) }
-
-Set-StrictMode -Version Latest
-$ProgressPreference = 'SilentlyContinue'
-$ErrorActionPreference = 'Stop'
-
-Start-Transcript -Path 'C:\Windows\Temp\first-logon.log' -Append | Out-Null
-
-trap {
-    Write-Host "ERROR: $_"
-    ($_.ScriptStackTrace -split '\r?\n') -replace '^(.*)$', 'ERROR: $1' | Write-Host
-    ($_.Exception.ToString() -split '\r?\n') -replace '^(.*)$', 'ERROR EXCEPTION: $1' | Write-Host
-    Write-Status ("TRAP ERROR: " + $_.Exception.Message)
-    Write-Status ("TRAP AT: " + $_.InvocationInfo.PositionMessage)
-    Write-Status 'STATUS: failed'
-    try {
-        Add-Content -Path 'A:\STATUS.TXT' -Value "TRAP ERROR: $($_.Exception.Message)"
-        Add-Content -Path 'A:\STATUS.TXT' -Value "TRAP AT: $($_.InvocationInfo.PositionMessage)"
-        Add-Content -Path 'A:\STATUS.TXT' -Value 'STATUS: failed'
-    } catch {}
-    Stop-Transcript | Out-Null
-    # leave the VM up for a while so a failed run can be inspected over VNC.
-    Start-Sleep -Seconds (60*60)
-    Exit 1
+    Add-LocalGroupMember -Group Administrators -Member runner -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Force 'C:\actions-runner' | Out-Null
+    Run 'powershell' @('-NoProfile','-Command',"Expand-Archive '$zip' 'C:\actions-runner' -Force") 480
 }
 
-[Net.ServicePointManager]::SecurityProtocol = `
-    [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+Log '=== eject the provision media ==='
+$ej = Payload 'EjectVolumeMedia.exe'
+if ($ej) { Run $ej @() 60 }
 
-# --- network profile -------------------------------------------------------
-# QEMU user-net (slirp) delivers packer's inbound connection through the NAT
-# gateway. On a *Public* profile Windows applies stealth-mode inbound drops
-# below the firewall-rule layer, which is exactly the "TCP connects but the
-# SSH banner never arrives" failure. Mark every interface Private and open
-# the port before touching sshd.
-Get-NetConnectionProfile `
-    | Where-Object { $_.NetworkCategory -ne 'DomainAuthenticated' } `
-    | Set-NetConnectionProfile -NetworkCategory Private -ErrorAction SilentlyContinue
-if (-not (Get-NetFirewallRule -DisplayName 'SSH' -ErrorAction SilentlyContinue)) {
-    New-NetFirewallRule -DisplayName 'SSH' -Direction Inbound -Protocol TCP `
-        -LocalPort 22 -Action Allow -Profile Any | Out-Null
-}
+Log '=== cleanup ==='
+Stop-Service sshd -Force -ErrorAction SilentlyContinue
+Remove-Item 'C:\ProgramData\ssh\ssh_host_*' -Force -ErrorAction SilentlyContinue
+& net.exe user packer /delete 2>$null | Out-Null
+netsh advfirewall set allprofiles state on 2>$null | Out-Null
+Remove-Item 'C:\provision' -Recurse -Force -ErrorAction SilentlyContinue
 
-# --- OpenSSH -------------------------------------------------------------
-# Install the PowerShell/Win32-OpenSSH release. Binaries land in
-# $openSshHome; config, host keys and logs in $openSshConfigHome.
-$openSshHome = 'C:\Program Files\OpenSSH'
-$openSshConfigHome = 'C:\ProgramData\ssh'
-
-Add-Type -AssemblyName System.IO.Compression.FileSystem
-
-# uninstall the Windows provided OpenSSH binaries.
-Write-Status 'STEP: enumerate-openssh-capabilities'
-$windowsOpenSshCapabilities = Get-WindowsCapability -Online -Name 'OpenSSH.*' | Where-Object { $_.State -ne 'NotPresent' }
-if ($windowsOpenSshCapabilities) {
-    Write-Status 'STEP: removing-windows-openssh'
-    $windowsOpenSshCapabilities | Remove-WindowsCapability -Online | Out-Null
-}
-
-Write-Status 'STEP: extract-openssh-zip'
-# The guest cannot reach the internet through QEMU/slirp (ICMP to the
-# gateway works but TCP never establishes and DNS never resolves — a known
-# slirp quirk), so OpenSSH-Win64.zip is baked onto the provision ISO by
-# fetch-windows-drivers.sh. Find it on whichever CD drive mounted the ISO.
-$localZipPath = "$env:TEMP\OpenSSH-Win64.zip"
-$cdZip = $null
-foreach ($d in 'D','E','F','G','H') {
-    $p = "${d}:\OpenSSH-Win64.zip"
-    if (Test-Path $p) { $cdZip = $p; break }
-}
-if (-not $cdZip) {
-    Write-Host 'OpenSSH-Win64.zip not found on any CD drive — falling back to download'
-    Write-Status 'STEP: download-openssh-zip'
-    (New-Object System.Net.WebClient).DownloadFile(
-        "https://github.com/PowerShell/Win32-OpenSSH/releases/download/10.0.0.0p2-Preview/OpenSSH-Win64.zip",
-        $localZipPath)
-} else {
-    Write-Host ("extracting " + $cdZip)
-    Copy-Item $cdZip $localZipPath
-}
-if (Test-Path $openSshHome) {
-    Remove-Item -Recurse -Force $openSshHome
-}
-[IO.Compression.ZipFile]::ExtractToDirectory($localZipPath, $openSshHome)
-Remove-Item $localZipPath
-Push-Location $openSshHome
-Move-Item OpenSSH-Win64\* .
-Remove-Item OpenSSH-Win64
-.\ssh.exe -V
-Pop-Location
-
-# add the OpenSSH binaries to the system PATH.
-[Environment]::SetEnvironmentVariable(
-    'PATH',
-    "$([Environment]::GetEnvironmentVariable('PATH', 'Machine'));$openSshHome",
-    'Machine')
-
-# remove any existing configuration.
-if (Test-Path $openSshConfigHome) {
-    Remove-Item -Recurse -Force $openSshConfigHome
-}
-
-# modify the default configuration.
-# NB sshd, at startup, copies this file to $openSshConfigHome\sshd_config
-#    when it does not already exist (fresh install).
-$sshdConfig = Get-Content -Raw "$openSshHome\sshd_config_default"
-# let Administrators also use ~/.ssh/authorized_keys.
-# see https://github.com/PowerShell/Win32-OpenSSH/issues/1324
-$sshdConfig = $sshdConfig `
-    -replace '(?m)^(Match Group administrators.*)', '#$1' `
-    -replace '(?m)^(\s*AuthorizedKeysFile __PROGRAMDATA__/ssh/administrators_authorized_keys.*)', '#$1'
-# disable UseDNS.
-$sshdConfig = $sshdConfig `
-    -replace '(?m)^#?\s*UseDNS .+', 'UseDNS no'
-Set-Content -Encoding ascii -NoNewline -Path "$openSshHome\sshd_config_default" -Value $sshdConfig
-
-# install the service.
-&"$openSshHome\install-sshd.ps1" -Confirm:$false
-
-# start the service (it creates the configuration and host keys).
-Start-Service sshd
-
-# wait for all the files to be created.
-while ($true) {
-    $pendingFiles = @(
-        'ssh_host_ecdsa_key.pub'
-        'ssh_host_ecdsa_key'
-        'ssh_host_ed25519_key.pub'
-        'ssh_host_ed25519_key'
-        'ssh_host_rsa_key.pub'
-        'ssh_host_rsa_key'
-        'sshd_config'
-        'sshd.pid'
-    ) | Where-Object {
-        $filePath = "$openSshConfigHome\$_"
-        !((Test-Path $filePath) -and (Get-Item $filePath).Length)
-    }
-    if (!$pendingFiles) {
-        break
-    }
-    Start-Sleep -Seconds 5
-}
-Start-Sleep -Seconds 15
-Stop-Service sshd
-
-Write-Com1 'Setting the host file permissions...'
-&"$openSshHome\FixHostFilePermissions.ps1" -Confirm:$false
-
-Write-Com1 'Configuring sshd and ssh-agent services...'
-# WARN do not change the startup type from delayed-auto to auto: the later
-#      proved unreliable (sshd accepts the socket then stalls the banner).
-$result = sc.exe config sshd start= delayed-auto
-if ($result -ne '[SC] ChangeServiceConfig SUCCESS') {
-    throw "sc.exe config sshd failed with $result"
-}
-$result = sc.exe failure sshd reset= 0 actions= restart/60000
-if ($result -ne '[SC] ChangeServiceConfig2 SUCCESS') {
-    throw "sc.exe failure sshd failed with $result"
-}
-$result = sc.exe failure ssh-agent reset= 0 actions= restart/60000
-if ($result -ne '[SC] ChangeServiceConfig2 SUCCESS') {
-    throw "sc.exe failure ssh-agent failed with $result"
-}
-
-# powershell over ssh (matches how the linux images behave for packer).
-New-ItemProperty -Path 'HKLM:\SOFTWARE\OpenSSH' -Name DefaultShell `
-    -Value 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' `
-    -PropertyType String -Force | Out-Null
-
-Write-Status 'STEP: start-sshd'
-Write-Com1 'Starting the sshd service...'
-Start-Service sshd
-Write-Status 'STEP: sshd-started'
-
-Write-Com1 'Firewall rule added; sshd up'
-New-NetFirewallRule -Protocol TCP -LocalPort 22 -Direction Inbound -Action Allow -DisplayName SSH | Out-Null
-
-# --- stop the autologon ---------------------------------------------------
-# LogonCount=1 in autounattend.xml already expires after this session; also
-# clear the flag and any stored default credentials.
-$winlogon = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'
-Set-ItemProperty -Path $winlogon -Name AutoAdminLogon -Value 0
-'AutoLogonCount', 'DefaultUserName', 'DefaultPassword' | ForEach-Object {
-    Remove-ItemProperty -Path $winlogon -Name $_ -ErrorAction SilentlyContinue
-}
-
-Write-Com1 'First-logon bootstrap complete; sshd is listening.'
-
-# dump diagnostics to the serial log AND to the host over slirp's
-# always-present 10.0.2.2 gateway — the CI runner listens on :8080 and
-# logs every request, a channel that works regardless of whether A:/COM1
-# are wired up. A failed SSH connect can then be diagnosed from CI output.
-function Write-Status($text) {
-    Write-Com1 $text
-    try { Add-Content -Path 'A:\STATUS.TXT' -Value $text -ErrorAction Stop } catch {}
-    try {
-        $q = [uri]::EscapeDataString($text)
-        Invoke-WebRequest -Uri "http://10.0.3.1:8080/?s=$q" -UseBasicParsing -TimeoutSec 5 | Out-Null
-    } catch {}
-}
-try {
-    Write-Status ("NET: " + ((Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | ForEach-Object { $_.InterfaceAlias + '=' + $_.IPAddress }) -join ', '))
-    Write-Status ("PROFILE: " + ((Get-NetConnectionProfile -ErrorAction SilentlyContinue | ForEach-Object { $_.InterfaceAlias + '=' + $_.NetworkCategory }) -join ', '))
-    Write-Status ("DEFGW: " + ((Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | ForEach-Object { $_.NextHop }) -join ', '))
-    Write-Status ("SSHD: " + (Get-Service sshd -ErrorAction SilentlyContinue).Status)
-    Write-Status ("LISTEN22: " + ((Get-NetTCPConnection -LocalPort 22 -State Listen -ErrorAction SilentlyContinue).Count))
-    Write-Status ("LISTEN22addr: " + ((Get-NetTCPConnection -LocalPort 22 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { $_.LocalAddress }) -join ','))
-    Write-Status ("FW: " + ((Get-NetFirewallProfile -ErrorAction SilentlyContinue | ForEach-Object { $_.Name + '=' + $_.Enabled }) -join ', '))
-    Write-Status ("DNS-test: " + ((Test-NetConnection -ComputerName github.com -Port 443 -WarningAction SilentlyContinue).TcpTestSucceeded))
-    Write-Status 'STATUS: complete'
-} catch { Write-Status "diag failed: $_" }
-
-Stop-Transcript | Out-Null
-logoff
+Log '=== sysprep + shutdown ==='
+Set-Content -Encoding ascii 'C:\Windows\Temp\sysprep-unattend.xml' @'
+<?xml version="1.0" encoding="utf-8"?>
+<unattend xmlns="urn:schemas-microsoft-com:unattend">
+  <settings pass="generalize">
+    <component name="Microsoft-Windows-PnpSysprep" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+      <PersistAllDeviceInstalls>false</PersistAllDeviceInstalls>
+    </component>
+  </settings>
+</unattend>
+'@
+& "$env:SystemRoot\System32\Sysprep\sysprep.exe" /generalize /oobe /quit /unattend:'C:\Windows\Temp\sysprep-unattend.xml'
+Start-Sleep 15
+Log '=== power off (kill watchdog, then real shutdown) ==='
+try { Stop-Process -Id $watchdog.Id -Force -ErrorAction Stop } catch {}
+& shutdown /p /f | Out-Null

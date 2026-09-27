@@ -15,10 +15,21 @@ trap {
 [Net.ServicePointManager]::SecurityProtocol = `
     [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
-$exe = "$env:TEMP\EjectVolumeMedia.exe"
-Invoke-WebRequest `
-    'https://github.com/rgl/EjectVolumeMedia/releases/download/v1.0.0/EjectVolumeMedia.exe' `
-    -OutFile $exe
+$exe = $null
+$cdDrives = @('C:\provision') + (Get-CimInstance Win32_Volume -Filter "DriveType=5" | ForEach-Object { "${($_.DriveLetter)}:" })
+if ($cdDrives.Count -eq 1) { $cdDrives += 'D','E','F','G','H' }
+foreach ($d in $cdDrives) {
+    foreach ($p in "$d\payloads\EjectVolumeMedia.exe", "$d\EjectVolumeMedia.exe") {
+        if (Test-Path $p) { $exe = $p; break }
+    }
+    if ($exe) { break }
+}
+if (-not $exe) {
+    $exe = "$env:TEMP\EjectVolumeMedia.exe"
+    Invoke-WebRequest `
+        'https://github.com/rgl/EjectVolumeMedia/releases/download/v1.0.0/EjectVolumeMedia.exe' `
+        -OutFile $exe
+}
 $hash = (Get-FileHash $exe -Algorithm SHA256).Hash
 if ($hash -ne 'f7863394085e1b3c5aa999808b012fba577b4a027804ea292abf7962e5467ba0') {
     throw "EjectVolumeMedia.exe hash mismatch: $hash"

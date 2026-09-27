@@ -24,20 +24,24 @@ trap {
 $cbHome = 'C:\Program Files\Cloudbase Solutions\Cloudbase-Init'
 $cbConfPath = "$cbHome\conf\cloudbase-init.conf"
 
-# see https://github.com/cloudbase/cloudbase-init/releases
-$cbVersion = '1.1.8'
-$artifactUrl = "https://github.com/cloudbase/cloudbase-init/releases/download/$cbVersion/CloudbaseInitSetup_$($cbVersion -replace '\.','_')_x64.msi"
-$msi = "$env:TEMP\$(Split-Path -Leaf $artifactUrl)"
-
-Write-Host "Downloading $artifactUrl ..."
-while ($true) {
-    try {
-        Invoke-WebRequest $artifactUrl -OutFile $msi
-        break
-    } catch {
-        Write-Host "download failed ($_), retrying..."
-        Start-Sleep -Seconds 5
+# OFFLINE: install the MSI from <cd>:\payloads\CloudbaseInitSetup.msi
+# (the guest has no working TCP under QEMU).
+$msi = $null
+$cdDrives = @('C:\provision') + (Get-CimInstance Win32_Volume -Filter "DriveType=5" | ForEach-Object { "${($_.DriveLetter)}:" })
+if ($cdDrives.Count -eq 1) { $cdDrives += 'D','E','F','G','H' }
+foreach ($d in $cdDrives) {
+    foreach ($p in "$d\payloads\CloudbaseInitSetup.msi", "$d\CloudbaseInitSetup.msi") {
+        if (Test-Path $p) { $msi = $p; break }
     }
+    if ($msi) { break }
+}
+if (-not $msi) {
+    # see https://github.com/cloudbase/cloudbase-init/releases
+    $cbVersion = '1.1.8'
+    $artifactUrl = "https://github.com/cloudbase/cloudbase-init/releases/download/$cbVersion/CloudbaseInitSetup_$($cbVersion -replace '\.','_')_x64.msi"
+    $msi = "$env:TEMP\$(Split-Path -Leaf $artifactUrl)"
+    Write-Host "cloudbase-init payload not on the ISO — downloading $artifactUrl ..."
+    Invoke-WebRequest $artifactUrl -OutFile $msi
 }
 
 Write-Host 'Installing cloudbase-init...'

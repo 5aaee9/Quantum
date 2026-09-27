@@ -31,7 +31,7 @@ if command -v bsdtar >/dev/null 2>&1; then
     #    integrity check below asserts that everything we need made it out.
     (cd drivers && bsdtar -xf virtio-win.iso \
         "amd64/2k25" "amd64/w11" \
-        "NetKVM/2k25" \
+        "NetKVM/2k22" \
         "vioscsi/2k25" "vioscsi/w11" \
         "vioserial/2k25" \
         "viostor/2k25" "viostor/w11" \
@@ -40,7 +40,7 @@ elif command -v xorriso >/dev/null 2>&1; then
     xorriso -osirrox on -indev "$ISO_PATH" \
         -extract /amd64/2k25 drivers/amd64/2k25 \
         -extract /amd64/w11 drivers/amd64/w11 \
-        -extract /NetKVM/2k25 drivers/NetKVM/2k25 \
+        -extract /NetKVM/2k22 drivers/NetKVM/2k22 \
         -extract /vioscsi/2k25 drivers/vioscsi/2k25 \
         -extract /vioscsi/w11 drivers/vioscsi/w11 \
         -extract /vioserial/2k25 drivers/vioserial/2k25 \
@@ -59,7 +59,7 @@ missing=0
 for f in \
     drivers/vioscsi/2k25/amd64/vioscsi.inf \
     drivers/viostor/2k25/amd64/viostor.inf \
-    drivers/NetKVM/2k25/amd64/netkvm.inf \
+    drivers/NetKVM/2k22/amd64/netkvm.inf \
     drivers/vioserial/2k25/amd64/vioser.inf \
     drivers/virtio-win-guest-tools.exe; do
     if [ ! -f "$f" ]; then
@@ -69,20 +69,51 @@ for f in \
 done
 [ "$missing" = 0 ] || exit 1
 
-# OpenSSH for the guest — the Windows guest cannot reach the internet
-# through QEMU/slirp (ICMP to the gateway works but TCP never establishes
-# and DNS never resolves — a known slirp quirk), so the Win32-OpenSSH zip
-# rides along on the provision ISO and the first-logon script extracts it
-# from E:\ instead of downloading it.
-OPENSSH_VER="10.0.0.0p2-Preview"
-OPENSSH_ZIP="drivers/OpenSSH-Win64.zip"
-if [ ! -f "$OPENSSH_ZIP" ]; then
-    curl -fSL --retry 3 -o "$OPENSSH_ZIP" \
-        "https://github.com/PowerShell/Win32-OpenSSH/releases/download/${OPENSSH_VER}/OpenSSH-Win64.zip"
-fi
-if [ ! -s "$OPENSSH_ZIP" ]; then
-    echo "error: expected $OPENSSH_ZIP after download" >&2
-    exit 1
-fi
+# ---------------------------------------------------------------------------
+# Provisioner payloads. The Windows guest cannot establish a single TCP
+# connection on ANY QEMU NIC/backend we tried (virtio 2k22+2k25, e1000,
+# e1000e, rtl8139; slirp AND tap) — ICMP/UDP flow but TCP never emits a
+# segment (virtio-win NetKVM datapath bugs on Server 2025 + a deeper
+# guest-side TCP failure). So the build runs fully OFFLINE: every payload
+# the provisioners need is downloaded HERE on the host (which has normal
+# networking) and shipped on the provision ISO; the guest scripts install
+# from the CD and never touch the network. communicator="none".
+# ---------------------------------------------------------------------------
+mkdir -p drivers/payloads
 
-echo "virtio drivers + OpenSSH ready under drivers/"
+fetch() {  # fetch <output-file> <url> [must-match]
+    local out="$1" url="$2"
+    if [ ! -s "$out" ]; then
+        echo "fetching $out"
+        curl -fSL --retry 3 -o "$out" "$url"
+    fi
+    [ -s "$out" ] || { echo "error: $out empty after fetch" >&2; exit 1; }
+}
+
+# latest-release asset URL resolver via the GitHub API.
+gh_asset() {  # gh_asset <repo> <asset-glob>
+    curl -fsSL "https://api.github.com/repos/$1/releases/latest" \
+        | grep -oE '"browser_download_url": *"[^"]+"' \
+        | sed -E 's/.*"(https:[^"]+)".*/\1/' \
+        | grep -iE "$2" | head -1
+}
+
+fetch drivers/OpenSSH-Win64.zip \
+    "https://github.com/PowerShell/Win32-OpenSSH/releases/download/10.0.0.0p2-Preview/OpenSSH-Win64.zip"
+
+fetch drivers/payloads/Git-64-bit.exe \
+    "$(gh_asset git-for-windows/git 'Git-.*-64-bit\.exe')"
+
+fetch drivers/payloads/PowerShell-win-x64.msi \
+    "$(gh_asset PowerShell/PowerShell 'PowerShell-.*-win-x64\.msi')"
+
+fetch drivers/payloads/CloudbaseInitSetup.msi \
+    "https://github.com/cloudbase/cloudbase-init/releases/download/1.1.8/CloudbaseInitSetup_1_1_8_x64.msi"
+
+fetch drivers/payloads/EjectVolumeMedia.exe \
+    "https://github.com/rgl/EjectVolumeMedia/releases/download/v1.0.0/EjectVolumeMedia.exe"
+
+fetch drivers/payloads/actions-runner-win-x64.zip \
+    "$(gh_asset actions/runner 'actions-runner-win-x64-[0-9.]+\.zip')"
+
+echo "virtio drivers + all provisioner payloads ready under drivers/"

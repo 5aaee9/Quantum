@@ -13,28 +13,32 @@
 # builds): https://github.com/rgl/windows-vagrant
 
 source "qemu" "windows-2025-runner" {
-  iso_url           = var.iso_url
-  iso_checksum      = var.iso_checksum
+  iso_url      = var.iso_url
+  iso_checksum = var.iso_checksum
 
-  output_directory  = "outputs/windows-2025-runner"
-  accelerator       = "kvm"
+  output_directory = "outputs/windows-2025-runner"
+  accelerator      = "kvm"
 
-  cpus              = var.numvcpus
-  memory            = var.memory
-  disk_size         = var.disk_size
-  disk_interface    = "virtio-scsi"
-  # virtio-net — NetKVM is the well-supported virtio NIC driver on QEMU
-  # and is what rgl/windows-vagrant uses. (e1000 bound as 'Intel PRO/1000'
-  # but even a forced static address couldn't reach slirp — its Windows
-  # driver doesn't reliably TX on QEMU's e1000 emulation.)
-  net_device        = "virtio-net"
-  format            = "qcow2"
+  cpus      = var.numvcpus
+  memory    = var.memory
+  disk_size = var.disk_size
+  # virtio-scsi (rgl's choice) needs the vioscsi driver inside windowsPE;
+  # this Windows build enumerates the disk (partitions it) but never writes
+  # a byte — the vioscsi data path never comes up. IDE/SATA needs no driver
+  # (in-box storahci) so the install target is guaranteed writable. The
+  # provision-ISO drivers still install virtio for the deployed VM.
+  disk_interface = "ide"
+  # virtio-net — the NIC only matters for boot-time DHCP/diagnostics now
+  # (the build is fully offline; packer never connects). virtio matches
+  # the disk drivers (virtio-scsi) that ship on the provision ISO.
+  net_device = "virtio-net"
+  format     = "qcow2"
 
   efi_boot          = true
   efi_firmware_code = var.efi_firmware_code
   efi_firmware_vars = var.efi_firmware_vars
 
-  headless          = var.headless
+  headless = var.headless
 
   # UEFI "Press any key to boot from CD or DVD" prompt. The prompt only
   # stays up for a few seconds right after OVMF hands off to bootx64.efi,
@@ -43,8 +47,8 @@ source "qemu" "windows-2025-runner" {
   # brief window. boot_wait is intentionally NOT the shared var.boot_wait
   # (10s is already past the prompt); send the Up-arrow train starting
   # ~1s in so several presses straddle the window.
-  boot_wait         = "1s"
-  boot_command      = ["<up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait>"]
+  boot_wait    = "1s"
+  boot_command = ["<up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait><up><wait>"]
 
   # Single provision ISO at E: (the second CD-ROM): autounattend.xml +
   # the virtio-win drivers + QEMU guest-tools + the first-logon script.
@@ -53,14 +57,25 @@ source "qemu" "windows-2025-runner" {
   # NetKVM — into the installed image (this is rgl/windows-vagrant's
   # proven single-CD layout; splitting the answer file onto a floppy left
   # the network driver out and SSH never came up).
-  cd_label          = "PROVISION"
+  cd_label = "PROVISION"
   cd_files = [
     "http/windows-2025-runner/autounattend.xml",
     "http/windows-2025-runner/provision-first-logon.ps1",
-    "drivers/NetKVM/2k25/amd64/*.cat",
-    "drivers/NetKVM/2k25/amd64/*.inf",
-    "drivers/NetKVM/2k25/amd64/*.sys",
-    "drivers/NetKVM/2k25/amd64/*.exe",
+    # the guest has no working TCP under QEMU so the build is fully offline:
+    # provision-first-logon.ps1 is self-contained — it installs every payload
+    # below, writes cloudbase-init.conf, then syspreps + powers off.
+    # every binary payload the orchestrator installs (git, pwsh, cloudbase-init,
+    # eject-media, actions-runner) — fetched host-side by
+    # scripts/fetch-windows-drivers.sh.
+    "drivers/payloads/*",
+    # NetKVM 2k22 (not 2k25): the Server-2025 (2k25) NetKVM driver enables
+    # NdisPoll by default, and under QEMU that leaves the NIC reporting Up
+    # while its datapath moves zero frames — no TX/RX at all. The 2k22
+    # driver has no poll mode and binds fine on Server 2025.
+    "drivers/NetKVM/2k22/amd64/*.cat",
+    "drivers/NetKVM/2k22/amd64/*.inf",
+    "drivers/NetKVM/2k22/amd64/*.sys",
+    "drivers/NetKVM/2k22/amd64/*.exe",
     "drivers/vioscsi/2k25/amd64/*.cat",
     "drivers/vioscsi/2k25/amd64/*.inf",
     "drivers/vioscsi/2k25/amd64/*.sys",
@@ -77,40 +92,49 @@ source "qemu" "windows-2025-runner" {
     "drivers/OpenSSH-Win64.zip",
   ]
 
-  # Packer talks to Windows over OpenSSH (installed by the first-logon
-  # bootstrap script). Final command: generalize with sysprep and power off;
-  # cloudbase-init takes over on first boot of a cloned VM.
-  communicator           = "ssh"
-  ssh_username           = var.ssh_username
-  ssh_password           = var.ssh_password
-  # SSH straight to the guest's tap-NIC address, NOT via slirp hostfwd.
-  # QEMU user-mode (slirp) cannot carry TCP for this Windows guest at all
-  # — ICMP to the gateway works but no TCP connection (inbound hostfwd OR
-  # outbound) ever establishes, a known slirp<->Windows quirk. The build
-  # therefore attaches a real TAP device (created by the workflow Build
-  # step, NAT'd to the runner's eth0) on which the guest has a normal,
-  # fully-working TCP/IP stack. ssh_host/ssh_port make packer dial the tap
-  # address directly instead of the forwarded localhost port.
-  ssh_host               = "10.0.3.15"
-  ssh_port               = 22
-  # 90min is generous — sshd comes up within a few minutes of the desktop
-  # appearing; a longer wait just delays discovering a broken bootstrap.
-  ssh_timeout            = "90m"
-  ssh_file_transfer_method = "sftp"
-  shutdown_command       = "powershell -NoProfile -ExecutionPolicy Bypass -File C:/Windows/Temp/packer-sysprep-shutdown.ps1"
-  shutdown_timeout       = "1h"
+  # NO communicator — the Windows guest cannot establish a single TCP
+  # connection under QEMU (virtio/e1000/e1000e/rtl8139, slirp AND tap all
+  # fail: ICMP/UDP flow but TCP never emits a segment — a NetKVM/driver
+  # datapath bug on Server 2025). So packer never connects; the build is
+  # fully offline. provision-first-logon.ps1 (run by autounattend's
+  # FirstLogonCommands) installs everything from the provision ISO and ends
+  # with `sysprep /generalize /oobe /shutdown`; packer waits for the VM to
+  # power off and captures the qcow2.
+  communicator = "none"
+  # the whole build (install + specialize + first-logon provision + sysprep)
+  # takes ~40-50min. Each provision step is hard-capped at 10min in the
+  # orchestrator, so even a pathological hang can't stall past ~1h20m.
+  shutdown_timeout = "2h"
 
   qemuargs = [
     # match rgl/windows-vagrant's proven Windows+qemu device set as closely
     # as packer allows (packer owns the disks/ISOs/EFI drives; we only add
     # devices it doesn't generate).
-    ["-machine", "type=q35,accel=kvm:tcg,hpet=off"],
+    # pc (i440fx) — the classic QEMU machine whose ACPI exposes the S5
+    # soft-off register Windows writes to on `shutdown`. On q35 this guest
+    # runs shutdown cleanly but the machine never powers off (QEMU keeps
+    # running — the guest sits at a desktop forever), which means packer's
+    # communicator=none build never sees a shutdown and times out. i440fx's
+    # legacy ACPI PIIX4 power-management block is the path Windows actually
+    # uses for S5 power-off.
+    ["-machine", "type=q35,accel=kvm:tcg"],
     # Hyper-V enlightenments: large speedup for Windows guests on KVM.
-    ["-cpu", "host,hv-passthrough"],
+    # plain -cpu host: hv-passthrough exposes Hyper-V enlightenments that
+    # make this Server 2025 eval's Setup hang (reads install.wim, partitions
+    # the disk, then spins forever issuing zero disk writes). Without it the
+    # guest sees a plain KVM host and installs normally.
+    ["-cpu", "host"],
     ["-rtc", "base=localtime,clock=host"],
-    ["-vga", "qxl"],
+    # std VGA — windowsPE has no qxl driver; std gives a plain VGA console
+    # that actually renders the real Setup UI (qxl showed a stale screen
+    # hiding the true install state).
+    ["-vga", "std"],
     ["-device", "qemu-xhci"],
     ["-device", "virtio-tablet"],
+    # attach the boot disk — packer only emits `-drive id=drive0`; the
+    # scsi controller + scsi-hd device that maps it into the guest must be
+    # added manually (this is exactly rgl/windows-vagrant's pattern).
+    # Without these the guest has no disk and installs nowhere.
     # virtio serial console + QEMU guest-agent channel (rgl has these).
     ["-device", "virtio-serial-pci"],
     ["-chardev", "socket,path=windows-2025-runner-qga.sock,server=on,wait=off,id=qga0"],
@@ -121,57 +145,20 @@ source "qemu" "windows-2025-runner" {
     # on (OOBE prompt, login, error dialog, etc).
     ["-serial", "file:windows-2025-runner-serial.log"],
     ["-monitor", "unix:windows-2025-runner-monitor.sock,server,nowait"],
-    # Real TAP network — slirp can't carry TCP for this guest (see
-    # ssh_host note). The workflow Build step pre-creates tap0
-    # (10.0.3.1/24, NAT'd to eth0); the guest gets 10.0.3.15 statically.
-    # MAC 52:54:00:aa:bb:cc marks this NIC so the first-logon script can
-    # pick it out from packer's own (slirp, non-functional) NIC.
-    # packer still emits `-device virtio-net,netdev=user.0` for its managed
-    # NIC even when ssh_host is set, but does NOT create the user.0 netdev
-    # in that mode — QEMU then fails with "can't find value 'user.0'".
-    # Provide it ourselves (a dead slirp netdev; the guest disables it).
-    ["-netdev", "user,id=user.0"],
-    # vnet_hdr=off: the tap NIC is e1000 (not virtio), so QEMU must not
-    # prepend the virtio-net header — otherwise frames the host pushes into
-    # tap0 arrive at the guest mangled and it silently drops them (exactly
-    # the host->guest-unreachable symptom).
-    ["-netdev", "tap,id=tap0,ifname=tap0,script=no,downscript=no,vnet_hdr=off"],
-    # e1000 for the tap NIC — virtio-net's RX path drops broadcast frames
-    # for this Windows guest (it never answers the host's ARP request, so
-    # host->guest is unreachable even though guest->host works). e1000's
-    # Intel PRO/1000 driver handles broadcast RX correctly.
-    ["-device", "e1000,netdev=tap0,mac=52:54:00:aa:bb:cc"],
+    # No NIC is strictly needed — the build is fully offline (communicator
+    # = "none"), so packer's default slirp virtio-net NIC is left in place
+    # purely for in-guest diagnostics.
     # NOTE: do NOT add a -drive entry here. A `-drive` in qemuargs makes
     # packer drop *all* of its own generated -drive args (boot disk, the
     # Windows install ISO, the provision CD, and the EFI pflash), so QEMU
-    # fails to launch with "can't find value 'drive0'". Diagnostics go to
-    # the host over slirp's 10.0.2.2:8080 listener instead.
+    # fails to launch with "can't find value 'drive0'".
   ]
 }
 
 build {
   sources = ["source.qemu.windows-2025-runner"]
-
-  provisioner "powershell" {
-    script = "./scripts/windows/10-setup-guest-tools.ps1"
-  }
-
-  provisioner "windows-restart" {
-  }
-
-  provisioner "powershell" {
-    scripts = [
-      "./scripts/windows/20-setup-git.ps1",
-      "./scripts/windows/21-setup-pwsh.ps1",
-      "./scripts/github-runner/50-setup-runner-win.ps1",
-      "./scripts/windows/30-setup-cloudbase-init.ps1",
-      "./scripts/windows/90-eject-media.ps1",
-    ]
-  }
-
-  # Last provisioner: uploads the sysprep shutdown script invoked by
-  # shutdown_command, removes ssh host keys and the packer build account.
-  provisioner "powershell" {
-    script = "./scripts/windows/99-cleanup.ps1"
-  }
+  # no provisioners: communicator=none means packer cannot exec into the
+  # guest. All provisioning runs inside the guest from the provision ISO,
+  # driven by provision-first-logon.ps1, which syspreps+powers off at the
+  # end — packer completes when QEMU exits.
 }

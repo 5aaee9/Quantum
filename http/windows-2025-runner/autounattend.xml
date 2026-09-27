@@ -1,22 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <unattend xmlns="urn:schemas-microsoft-com:unattend">
     <settings pass="windowsPE">
-        <component name="Microsoft-Windows-PnpCustomizationsWinPE" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-            <DriverPaths>
-                <!-- the provision CD can land on D:, E: or F: depending on
-                     how QEMU orders the two CD-ROMs — list all of them so
-                     the virtio drivers are found regardless. -->
-                <PathAndCredentials wcm:action="add" wcm:keyValue="1">
-                    <Path>D:\</Path>
-                </PathAndCredentials>
-                <PathAndCredentials wcm:action="add" wcm:keyValue="2">
-                    <Path>E:\</Path>
-                </PathAndCredentials>
-                <PathAndCredentials wcm:action="add" wcm:keyValue="3">
-                    <Path>F:\</Path>
-                </PathAndCredentials>
-            </DriverPaths>
-        </component>
+        <!-- NO DriverPaths: Setup recursively scans each listed drive for
+             .inf files during windowsPE. The provision ISO carries ~400MB of
+             payloads (the GitHub-runner zip etc.), and Setup's recursive
+             driver scan over that stalls the install before it ever writes
+             the disk. The install disk is IDE (in-box storahci — no driver
+             needed), and virtio drivers are injected during specialize via
+             pnputil instead. -->
         <component name="Microsoft-Windows-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
             <DiskConfiguration>
                 <Disk wcm:action="add">
@@ -160,7 +151,15 @@
                 </SynchronousCommand>
                 <SynchronousCommand wcm:action="add">
                     <Order>3</Order>
-                    <CommandLine>PowerShell -WindowStyle Maximized -Command "Get-PSDrive -PSProvider FileSystem | ForEach-Object {$p = Join-Path $_.Root provision-first-logon.ps1; if (Test-Path $p) {&amp;$p}}"</CommandLine>
+                    <!-- run the provisioner from the on-disk staging dir
+                         (C:\provision\, copied in specialize) if present, else
+                         scan every drive for the provision CD. -->
+                    <!-- -ExecutionPolicy Bypass + -File: the .ps1 rides on a
+                         CD so it can carry a zone identifier that RemoteSigned
+                         would refuse under `&`; -File + Bypass runs it
+                         unconditionally. Redirect ALL output to a log so the
+                         build is debuggable even with no console/serial. -->
+                    <CommandLine>PowerShell -ExecutionPolicy Bypass -NoProfile -WindowStyle Maximized -File C:\provision\provision-first-logon.ps1</CommandLine>
                 </SynchronousCommand>
             </FirstLogonCommands>
         </component>
@@ -176,7 +175,14 @@
             here, during specialize, and also turn the firewall fully off for
             the build (cloudbase-init/real hardening happens later).
         -->
-        <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+        <component name="Microsoft-Windows-Deployment" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+            <!--
+                specialize-stage RunSynchronous belongs to
+                Microsoft-Windows-Deployment — under Microsoft-Windows-Shell-Setup
+                it is only valid in oobeSystem/auditUser, and putting it there
+                makes Setup reject the WHOLE answer file (0x80220001) so the
+                build never even reaches provisioning.
+            -->
             <RunSynchronous>
                 <!--
                     Kill UAC prompts for the whole build. FirstLogonCommands
@@ -189,21 +195,21 @@
                 <!-- each reg add as its own command avoids nested-quote
                      parsing problems inside a single cmd /c "..." line. -->
                 <RunSynchronousCommand wcm:action="add">
-                    <Order>0</Order>
+                    <Order>1</Order>
                     <Path>reg add HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System /v EnableLUA /t REG_DWORD /d 0 /f</Path>
                 </RunSynchronousCommand>
                 <RunSynchronousCommand wcm:action="add">
-                    <Order>0</Order>
+                    <Order>2</Order>
                     <Path>reg add HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System /v ConsentPromptBehaviorAdmin /t REG_DWORD /d 0 /f</Path>
                 </RunSynchronousCommand>
                 <RunSynchronousCommand wcm:action="add">
-                    <Order>0</Order>
+                    <Order>3</Order>
                     <Path>reg add HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System /v PromptOnSecureDesktop /t REG_DWORD /d 0 /f</Path>
                 </RunSynchronousCommand>
                 <!-- prove COM1 is reachable from inside setup; lands in the
                      serial log QEMU captures. -->
                 <RunSynchronousCommand wcm:action="add">
-                    <Order>0</Order>
+                    <Order>4</Order>
                     <Path>cmd /c "echo [specialize] COM1-marker &gt; COM1"</Path>
                 </RunSynchronousCommand>
                 <!--
@@ -216,8 +222,22 @@
                     lands the NIC driver.
                 -->
                 <RunSynchronousCommand wcm:action="add">
-                    <Order>1</Order>
+                    <Order>5</Order>
                     <Path>cmd /c "for %d in (D E F G H) do (if exist %d:\netkvm.inf pnputil /add-driver %d:\*.inf /subdirs /install)"</Path>
+                </RunSynchronousCommand>
+                <!--
+                    Stage the whole provision CD onto the hard disk at
+                    C:\provision\ — the CD drive letter is not stable and the
+                    CD can be absent/ejected by the time first-logon runs, so
+                    every payload script would fall back to a (broken) TCP
+                    download. Copying to C:\provision\ during specialize makes
+                    the payloads a fixed on-disk location that always resolves.
+                    We key off provision-first-logon.ps1 (unique to the
+                    provision CD, not the install ISO).
+                -->
+                <RunSynchronousCommand wcm:action="add">
+                    <Order>6</Order>
+                    <Path>cmd /c "for %d in (D E F G H I J) do (if exist %d:\provision-first-logon.ps1 (xcopy %d:\ C:\provision\ /E /I /Y /Q &amp; icacls C:\provision /grant Everyone:F /T /Q))"</Path>
                 </RunSynchronousCommand>
                 <!--
                     QEMU slirp hostfwd delivers inbound from the NAT gateway.
@@ -227,16 +247,29 @@
                     99-cleanup.ps1 turns the firewall back on.
                 -->
                 <RunSynchronousCommand wcm:action="add">
-                    <Order>2</Order>
+                    <Order>7</Order>
                     <Path>powershell -Command "Get-NetConnectionProfile | Set-NetConnectionProfile -NetworkCategory Private"</Path>
                 </RunSynchronousCommand>
                 <RunSynchronousCommand wcm:action="add">
-                    <Order>3</Order>
+                    <Order>8</Order>
                     <Path>netsh advfirewall set allprofiles state off</Path>
                 </RunSynchronousCommand>
                 <RunSynchronousCommand wcm:action="add">
-                    <Order>4</Order>
+                    <Order>9</Order>
                     <Path>netsh advfirewall firewall add rule name=SSH dir=in action=allow protocol=TCP localport=22</Path>
+                </RunSynchronousCommand>
+                <!--
+                    Provision on EVERY boot as SYSTEM via a scheduled task —
+                    this does not depend on the autologon user's interactive
+                    first logon the way oobeSystem FirstLogonCommands does, so
+                    it reliably runs even when autologon is delayed or the
+                    session is non-interactive. The script's done-marker +
+                    self-delete keep it idempotent; it self-removes and
+                    powers off when finished.
+                -->
+                <RunSynchronousCommand wcm:action="add">
+                    <Order>10</Order>
+                    <Path>cmd /c schtasks /create /tn ProvisionOnBoot /sc onstart /ru SYSTEM /rl HIGHEST /tr "powershell -ExecutionPolicy Bypass -NoProfile -File C:\provision\provision-first-logon.ps1" /f</Path>
                 </RunSynchronousCommand>
             </RunSynchronous>
         </component>
