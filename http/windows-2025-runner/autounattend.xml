@@ -136,6 +136,7 @@
                     <PlainText>false</PlainText>
                 </Password>
                 <Enabled>true</Enabled>
+                <LogonCount>1</LogonCount>
                 <Username>packer</Username>
             </AutoLogon>
             <FirstLogonCommands>
@@ -168,13 +169,8 @@
         <component name="Microsoft-Windows-ServerManager-SvrMgrNc" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
             <DoNotOpenServerManagerAtLogon>true</DoNotOpenServerManagerAtLogon>
         </component>
-        <!--
-            QEMU user-mode (slirp) hostfwd delivers inbound connections from the
-            NAT gateway (10.0.2.2). On a Public profile Windows can drop them
-            before a first-logon firewall rule ever runs, so open inbound TCP/22
-            here, during specialize, and also turn the firewall fully off for
-            the build (cloudbase-init/real hardening happens later).
-        -->
+        <!-- The build is offline. Do not query network profiles during
+             specialize: NetConnection CIM calls can wait indefinitely here. -->
         <component name="Microsoft-Windows-Deployment" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
             <!--
                 specialize-stage RunSynchronous belongs to
@@ -239,37 +235,11 @@
                     <Order>6</Order>
                     <Path>cmd /c "for %d in (D E F G H I J) do (if exist %d:\provision-first-logon.ps1 (xcopy %d:\ C:\provision\ /E /I /Y /Q &amp; icacls C:\provision /grant Everyone:F /T /Q))"</Path>
                 </RunSynchronousCommand>
-                <!--
-                    QEMU slirp hostfwd delivers inbound from the NAT gateway.
-                    On a Public network profile Windows drops those inbound
-                    connections below the firewall-rule layer, so mark every
-                    interface Private AND disable the firewall for the build.
-                    99-cleanup.ps1 turns the firewall back on.
-                -->
+                <!-- Only open SSH; offline provisioning does not require
+                     disabling the firewall or changing network profiles. -->
                 <RunSynchronousCommand wcm:action="add">
                     <Order>7</Order>
-                    <Path>powershell -Command "Get-NetConnectionProfile | Set-NetConnectionProfile -NetworkCategory Private"</Path>
-                </RunSynchronousCommand>
-                <RunSynchronousCommand wcm:action="add">
-                    <Order>8</Order>
-                    <Path>netsh advfirewall set allprofiles state off</Path>
-                </RunSynchronousCommand>
-                <RunSynchronousCommand wcm:action="add">
-                    <Order>9</Order>
                     <Path>netsh advfirewall firewall add rule name=SSH dir=in action=allow protocol=TCP localport=22</Path>
-                </RunSynchronousCommand>
-                <!--
-                    Provision on EVERY boot as SYSTEM via a scheduled task —
-                    this does not depend on the autologon user's interactive
-                    first logon the way oobeSystem FirstLogonCommands does, so
-                    it reliably runs even when autologon is delayed or the
-                    session is non-interactive. The script's done-marker +
-                    self-delete keep it idempotent; it self-removes and
-                    powers off when finished.
-                -->
-                <RunSynchronousCommand wcm:action="add">
-                    <Order>10</Order>
-                    <Path>cmd /c schtasks /create /tn ProvisionOnBoot /sc onstart /ru SYSTEM /rl HIGHEST /tr "powershell -ExecutionPolicy Bypass -NoProfile -File C:\provision\provision-first-logon.ps1" /f</Path>
                 </RunSynchronousCommand>
             </RunSynchronous>
         </component>

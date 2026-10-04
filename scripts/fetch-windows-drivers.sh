@@ -37,7 +37,9 @@ if command -v bsdtar >/dev/null 2>&1; then
         "viostor/2k25" "viostor/w11" \
         "virtio-win-guest-tools.exe" || true)
 elif command -v xorriso >/dev/null 2>&1; then
-    xorriso -osirrox on -indev "$ISO_PATH" \
+    # ISO directories are read-only. Allow subsequent extracts to create
+    # siblings under parents restored by an earlier -extract operation.
+    xorriso -osirrox on:auto_chmod_on -indev "$ISO_PATH" \
         -extract /amd64/2k25 drivers/amd64/2k25 \
         -extract /amd64/w11 drivers/amd64/w11 \
         -extract /NetKVM/2k22 drivers/NetKVM/2k22 \

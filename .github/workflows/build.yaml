@@ -57,6 +57,14 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Test Windows build scripts
+        if: matrix.builds.windows
+        run: |
+          pwsh -NoProfile -File tests/windows-script-encoding.ps1
+          pwsh -NoProfile -File tests/windows-process.ps1
+          pwsh -NoProfile -File tests/windows-unattend.ps1
+          bash tests/windows-build-status.sh
+
       - name: Setup packer
         uses: hashicorp/setup-packer@v3.4.0
         with:
@@ -161,6 +169,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: windows-2025-runner-screens
-          path: windows-screens/
+          path: |
+            windows-screens/
+            windows-2025-runner-serial.log
+            packer-windows.log
           retention-days: 7
           if-no-files-found: ignore

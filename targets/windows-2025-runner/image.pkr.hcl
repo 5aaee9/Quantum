@@ -92,31 +92,20 @@ source "qemu" "windows-2025-runner" {
     "drivers/OpenSSH-Win64.zip",
   ]
 
-  # NO communicator — the Windows guest cannot establish a single TCP
-  # connection under QEMU (virtio/e1000/e1000e/rtl8139, slirp AND tap all
-  # fail: ICMP/UDP flow but TCP never emits a segment — a NetKVM/driver
-  # datapath bug on Server 2025). So packer never connects; the build is
-  # fully offline. provision-first-logon.ps1 (run by autounattend's
-  # FirstLogonCommands) installs everything from the provision ISO and ends
-  # with `sysprep /generalize /oobe /shutdown`; packer waits for the VM to
-  # power off and captures the qcow2.
+  # Packer does not connect to the guest. Provisioning runs offline from
+  # FirstLogonCommands and writes BUILD_SUCCESS only after validation and
+  # Sysprep complete. The post-processor checks that record after power-off.
   communicator = "none"
-  # the whole build (install + specialize + first-logon provision + sysprep)
-  # takes ~40-50min. Each provision step is hard-capped at 10min in the
-  # orchestrator, so even a pathological hang can't stall past ~1h20m.
+  # Allow installation plus provisioning; the guest watchdog bounds hangs
+  # to 90 minutes, without allowing them to pass the success gate.
   shutdown_timeout = "2h"
 
   qemuargs = [
     # match rgl/windows-vagrant's proven Windows+qemu device set as closely
     # as packer allows (packer owns the disks/ISOs/EFI drives; we only add
     # devices it doesn't generate).
-    # pc (i440fx) — the classic QEMU machine whose ACPI exposes the S5
-    # soft-off register Windows writes to on `shutdown`. On q35 this guest
-    # runs shutdown cleanly but the machine never powers off (QEMU keeps
-    # running — the guest sits at a desktop forever), which means packer's
-    # communicator=none build never sees a shutdown and times out. i440fx's
-    # legacy ACPI PIIX4 power-management block is the path Windows actually
-    # uses for S5 power-off.
+    # q35 supplies the SATA controller used by disk_interface="ide".
+    # Local Windows Server 2025 install and shutdown use this machine type.
     ["-machine", "type=q35,accel=kvm:tcg"],
     # Hyper-V enlightenments: large speedup for Windows guests on KVM.
     # plain -cpu host: hv-passthrough exposes Hyper-V enlightenments that
@@ -157,8 +146,9 @@ source "qemu" "windows-2025-runner" {
 
 build {
   sources = ["source.qemu.windows-2025-runner"]
-  # no provisioners: communicator=none means packer cannot exec into the
-  # guest. All provisioning runs inside the guest from the provision ISO,
-  # driven by provision-first-logon.ps1, which syspreps+powers off at the
-  # end — packer completes when QEMU exits.
+  # A watchdog/failed provisioner can also power off. Never publish such
+  # an image merely because QEMU exited successfully.
+  post-processor "shell-local" {
+    inline = ["bash scripts/check-windows-build.sh windows-2025-runner-serial.log"]
+  }
 }

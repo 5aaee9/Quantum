@@ -1,4 +1,4 @@
-# provision-first-logon.ps1 — FULLY OFFLINE Windows runner image provisioner.
+﻿# provision-first-logon.ps1 — FULLY OFFLINE Windows runner image provisioner.
 #
 # Why offline: this Windows Server 2025 guest cannot establish a single TCP
 # connection under QEMU — we tried every NIC model (virtio NetKVM 2k22+2k25,
@@ -10,7 +10,7 @@
 # Payloads: specialize copies the provision CD to C:\provision\ (the CD drive
 # letter is unstable / the CD may be gone by first-logon), so everything
 # below reads from that fixed on-disk dir — no downloads, no network.
-$ErrorActionPreference = 'Continue'   # never die — always reach sysprep+shutdown
+$ErrorActionPreference = 'Stop'
 
 # WRITE A BREADCRUMB FIRST — the simplest possible proof this script ran.
 # Write to BOTH C:\Windows\Temp (always writable by any user) and C:\ so at
@@ -26,30 +26,22 @@ foreach ($tf in 'C:\Windows\Temp\provision.trace','C:\provision.trace') {
 function Log($m) {
     $line = "$(Get-Date -Format HH:mm:ss) $m"
     Write-Host $line
-    try { & cmd /c "echo PROV: $line > COM1" 2>$null | Out-Null } catch {}
+    $escaped = $line -replace '([&|<>()^])', '^$1'
+    try { & cmd /c "echo PROV: $escaped > COM1" 2>$null | Out-Null } catch {}
     foreach ($tf in 'C:\Windows\Temp\provision.trace','C:\provision.trace') { Add-Content $tf -Value $line -ErrorAction SilentlyContinue }
 }
 
-# sentinel: if this already ran (a post-sysprep OOBE re-triggered
-# FirstLogonCommands), just power off — never loop provision->sysprep->oobe.
-if (Test-Path 'C:\provision-done.marker') {
-    Log 'marker present — powering off'
-    & shutdown /p /f | Out-Null
-    return
-}
-New-Item 'C:\provision-done.marker' -ItemType File -Force | Out-Null
+# FirstLogonCommands is the only entry point. A completed build must never
+# run provisioning again, nor should a duplicate invocation power it off.
+if (Test-Path 'C:\provision-done.marker') { return }
 
-# we were invoked by the ProvisionOnBoot scheduled task (registered in
-# specialize) — delete it now so a post-sysprep OOBE boot doesn't re-run us.
-schtasks /delete /tn ProvisionOnBoot /f 2>$null | Out-Null
-
-# DEAD-MAN SWITCH: a detached process that sleeps 25min then force-powers
-# off. This is a separate powershell process guaranteed to fire — if
-# provisioning hangs the VM still powers off so packer completes. Success
-# path kills it via $watchdog below before the real sysprep+shutdown.
+# A hung step eventually powers off, but without BUILD_SUCCESS the host-side
+# post-processor rejects the image. Shutdown alone is not a success signal.
 $watchdog = Start-Process powershell -PassThru -WindowStyle Hidden `
-    -ArgumentList '-NoProfile','-Command','Start-Sleep 1500; shutdown /p /f' -ErrorAction SilentlyContinue
-Log "watchdog armed: poweroff in 25min if provisioning hangs"
+    -ArgumentList '-NoProfile','-Command','Start-Sleep 5400; shutdown /p /f'
+Log 'watchdog armed: poweroff in 90min if provisioning hangs'
+
+try {
 
 # resolve the payload dir: prefer the on-disk staging copy (C:\provision),
 # else scan CD-ROM drives for the PROVISION volume.
@@ -65,28 +57,39 @@ function Payload($name) {
     foreach ($p in "$pv\$name", "$pv\payloads\$name") {
         if (Test-Path $p) { return $p }
     }
-    Log "  !! payload $name NOT FOUND"
-    return $null
+    throw "Required payload $name not found in $pv"
 }
 
-# run a command with a hard timeout so a hung installer can't stall the
-# whole build (packer has a 90m shutdown_timeout — we must power off).
-function Run($exe, [string[]]$argz, [int]$timeoutSec = 600) {
+# Retain the native process handle until its exit code has been checked.
+# Callers quote arguments containing spaces; an empty argument list is valid.
+function Run($exe, [string[]]$argz, [int]$timeoutSec = 600, [int[]]$successCodes = @(0, 3010)) {
     Log "  > $exe $($argz -join ' ')"
-    $proc = Start-Process -FilePath $exe -ArgumentList $argz -PassThru -NoNewWindow -ErrorAction SilentlyContinue
-    if (-not $proc) { Log "  (could not start)"; return }
-    if (-not $proc.WaitForExit($timeoutSec * 1000)) {
-        Log "  (TIMEOUT after ${timeoutSec}s — killing)"
-        try { $proc.Kill() } catch {}
+    $proc = New-Object System.Diagnostics.Process
+    $proc.StartInfo.FileName = $exe
+    $proc.StartInfo.Arguments = $argz -join ' '
+    $proc.StartInfo.UseShellExecute = $false
+    $proc.StartInfo.CreateNoWindow = $true
+    try {
+        if (-not $proc.Start()) { throw "Could not start $exe" }
+        if (-not $proc.WaitForExit($timeoutSec * 1000)) {
+            $proc.Kill()
+            throw "$exe timed out after ${timeoutSec}s"
+        }
+        $code = $proc.ExitCode
+        Log "  (exit $code)"
+        if ($code -notin $successCodes) { throw "$exe failed with exit code $code" }
+    } finally {
+        $proc.Dispose()
     }
-    Log "  (exit $($proc.ExitCode))"
 }
 
 Log '=== virtio drivers via pnputil (skip the guest-tools bundle — it hangs) ==='
 # the virtio-win-guest-tools MSI wrapper hangs under this environment; just
 # pnputil the individual .inf drivers instead (that's all we actually need).
 foreach ($inf in (Get-ChildItem "$pv\*.inf" -ErrorAction SilentlyContinue)) {
-    Run 'pnputil' @('/add-driver', $inf.FullName, '/install') 60
+    # ERROR_NO_MORE_ITEMS (259) means no matching device needs an update.
+    # Storage drivers are staged even though this build uses SATA.
+    Run 'pnputil' @('/add-driver', $inf.FullName, '/install') 60 @(0, 259, 3010)
 }
 & pnputil /scan-devices 2>$null | Out-Null
 
@@ -96,10 +99,10 @@ if ($ossh) {
     $sshHome = 'C:\Program Files\OpenSSH'
     Run 'powershell' @('-NoProfile','-Command',"Expand-Archive '$ossh' '$sshHome' -Force") 120
     $nested = Get-ChildItem $sshHome -Directory -Filter 'OpenSSH-Win64' -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($nested) { Get-ChildItem $nested.FullName | Move-Item $sshHome -Force -ErrorAction SilentlyContinue }
-    if (Test-Path "$sshHome\install-sshd.ps1") { Run 'powershell' @('-NoProfile','-File',"$sshHome\install-sshd.ps1") 120 }
-    Set-Service sshd -StartupType Automatic -ErrorAction SilentlyContinue
-    Set-Service ssh-agent -StartupType Automatic -ErrorAction SilentlyContinue
+    if ($nested) { Get-ChildItem $nested.FullName | Move-Item -Destination $sshHome -Force }
+    Run 'powershell' @('-NoProfile','-ExecutionPolicy','Bypass','-File',"`"$sshHome\install-sshd.ps1`"") 120
+    Set-Service sshd -StartupType Automatic
+    Set-Service ssh-agent -StartupType Automatic
 }
 
 Log '=== git ==='
@@ -177,6 +180,18 @@ if ($zip) {
     Run 'powershell' @('-NoProfile','-Command',"Expand-Archive '$zip' 'C:\actions-runner' -Force") 480
 }
 
+Log '=== verify installed payloads ==='
+foreach ($path in @(
+    'C:\Program Files\OpenSSH\sshd.exe',
+    'C:\Program Files\Git\bin\git.exe',
+    'C:\Program Files\PowerShell\7\pwsh.exe',
+    "$cbHome\conf\cloudbase-init.conf",
+    'C:\actions-runner\bin\Runner.Listener.exe'
+)) {
+    if (-not (Test-Path $path)) { throw "Missing installed payload: $path" }
+}
+Get-Service sshd, cloudbase-init -ErrorAction Stop | Out-Null
+
 Log '=== eject the provision media ==='
 $ej = Payload 'EjectVolumeMedia.exe'
 if ($ej) { Run $ej @() 60 }
@@ -199,8 +214,15 @@ Set-Content -Encoding ascii 'C:\Windows\Temp\sysprep-unattend.xml' @'
   </settings>
 </unattend>
 '@
-& "$env:SystemRoot\System32\Sysprep\sysprep.exe" /generalize /oobe /quit /unattend:'C:\Windows\Temp\sysprep-unattend.xml'
-Start-Sleep 15
-Log '=== power off (kill watchdog, then real shutdown) ==='
-try { Stop-Process -Id $watchdog.Id -Force -ErrorAction Stop } catch {}
-& shutdown /p /f | Out-Null
+Run "$env:SystemRoot\System32\Sysprep\sysprep.exe" @('/generalize', '/oobe', '/quit', '/quiet', '/unattend:C:\Windows\Temp\sysprep-unattend.xml') 1200 @(0)
+if (-not (Test-Path "$env:SystemRoot\System32\Sysprep\Sysprep_succeeded.tag")) {
+    throw 'Sysprep exited without its success tag'
+}
+New-Item 'C:\provision-done.marker' -ItemType File -Force | Out-Null
+Log 'BUILD_SUCCESS'
+} catch {
+    Log "BUILD_FAILED: $($_.Exception.Message)"
+} finally {
+    Stop-Process -Id $watchdog.Id -Force -ErrorAction SilentlyContinue
+    & shutdown /p /f | Out-Null
+}

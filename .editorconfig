@@ -3,3 +3,7 @@ indent_size = 2
 indent_style = space
 trim_trailing_whitespace = true
 insert_final_newline = true
+
+[*.ps1]
+# Windows PowerShell 5.1 otherwise decodes non-ASCII UTF-8 as ANSI.
+charset = utf-8-bom

@@ -1,4 +1,4 @@
-# Installs Cloudbase-Init (https://cloudbase.it/cloudbase-init/) — the
+﻿# Installs Cloudbase-Init (https://cloudbase.it/cloudbase-init/) — the
 # Windows re-implementation of cloud-init — and configures it for the
 # NoCloud and OpenStack ConfigDrive metadata services so the same image
 # works under libvirt/QEMU and Proxmox VE.
