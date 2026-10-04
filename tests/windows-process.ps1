@@ -23,6 +23,10 @@ Must-Fail { Run $pwsh @('-NoProfile', '-Command', '"exit 23"') 10 }
 Must-Fail { Run $pwsh @('-NoProfile', '-Command', '"Start-Sleep 30"') 1 }
 Must-Fail { Run 'quantum-nonexistent-executable' @() 1 }
 Run $pwsh @('-NoProfile', '-Command', '"exit 7"') 10 @(7)
-$noArgs = if ($env:OS -eq 'Windows_NT') { 'whoami.exe' } else { (Get-Command true -CommandType Application).Source }
+$noArgs = if ($env:OS -eq 'Windows_NT') { 'whoami.exe' } else {
+    # Ubuntu exposes true through both /usr/bin and /bin. Select one command,
+    # rather than coercing every matching path into a single executable name.
+    (Get-Command true -CommandType Application | Select-Object -First 1).Source
+}
 Run $noArgs @() 10
 Write-Host 'PASS: exit status, accepted codes, timeout, missing executable and empty arguments.'
