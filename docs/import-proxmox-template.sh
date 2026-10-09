@@ -107,19 +107,19 @@ import_virtual_machine() {
     qm template "$current_id"
 }
 
-import_virtual_machine "https://alist.indexyz.me/d/Local/VirtualMachineImages/debian-12.qcow2" "Debian-12" 1
-import_virtual_machine "https://alist.indexyz.me/d/Local/VirtualMachineImages/debian-13.qcow2" "Debian-13" 2
-import_virtual_machine "https://alist.indexyz.me/d/Local/VirtualMachineImages/debian-testing.qcow2" "Debian-Testing" 3
-import_virtual_machine "https://alist.indexyz.me/d/Local/VirtualMachineImages/almalinux-8.qcow2" "AlmaLinux-8" 4
-import_virtual_machine "https://alist.indexyz.me/d/Local/VirtualMachineImages/almalinux-9.qcow2" "AlmaLinux-9" 5
-import_virtual_machine "https://alist.indexyz.me/d/Local/VirtualMachineImages/ubuntu-24_04.qcow2" "Ubuntu-24.04" 6
-import_virtual_machine "https://alist.indexyz.me/d/Local/VirtualMachineImages/ubuntu-26_04.qcow2" "Ubuntu-26.04" 7
-import_virtual_machine "https://alist.indexyz.me/d/Local/VirtualMachineImages/archlinux.qcow2" "ArchLinux" 8
-import_virtual_machine "https://alist.indexyz.me/d/Local/VirtualMachineImages/rockylinux-8.qcow2" "RockyLinux-8" 9
-import_virtual_machine "https://alist.indexyz.me/d/Local/VirtualMachineImages/rockylinux-9.qcow2" "RockyLinux-9" 10
-import_virtual_machine "https://alist.indexyz.me/d/Local/VirtualMachineImages/rockylinux-10.qcow2" "RockyLinux-10" 11
-import_virtual_machine "https://alist.indexyz.me/d/Local/VirtualMachineImages/almalinux-10.qcow2" "AlmaLinux-10" 12
-import_virtual_machine "https://alist.indexyz.me/d/Local/VirtualMachineImages/github-runner.qcow2" "GitHub-Runner" 13
+import_virtual_machine "https://alist.indexyz.me/d/Local/VirtualMachineImages/debian-12.qcow2" "Debian-12" 0
+import_virtual_machine "https://alist.indexyz.me/d/Local/VirtualMachineImages/debian-13.qcow2" "Debian-13" 1
+import_virtual_machine "https://alist.indexyz.me/d/Local/VirtualMachineImages/debian-testing.qcow2" "Debian-Testing" 2
+import_virtual_machine "https://alist.indexyz.me/d/Local/VirtualMachineImages/almalinux-8.qcow2" "AlmaLinux-8" 3
+import_virtual_machine "https://alist.indexyz.me/d/Local/VirtualMachineImages/almalinux-9.qcow2" "AlmaLinux-9" 4
+import_virtual_machine "https://alist.indexyz.me/d/Local/VirtualMachineImages/ubuntu-24_04.qcow2" "Ubuntu-24.04" 5
+import_virtual_machine "https://alist.indexyz.me/d/Local/VirtualMachineImages/ubuntu-26_04.qcow2" "Ubuntu-26.04" 6
+import_virtual_machine "https://alist.indexyz.me/d/Local/VirtualMachineImages/archlinux.qcow2" "ArchLinux" 7
+import_virtual_machine "https://alist.indexyz.me/d/Local/VirtualMachineImages/rockylinux-8.qcow2" "RockyLinux-8" 8
+import_virtual_machine "https://alist.indexyz.me/d/Local/VirtualMachineImages/rockylinux-9.qcow2" "RockyLinux-9" 9
+import_virtual_machine "https://alist.indexyz.me/d/Local/VirtualMachineImages/rockylinux-10.qcow2" "RockyLinux-10" 10
+import_virtual_machine "https://alist.indexyz.me/d/Local/VirtualMachineImages/almalinux-10.qcow2" "AlmaLinux-10" 11
+import_virtual_machine "https://alist.indexyz.me/d/Local/VirtualMachineImages/github-runner.qcow2" "GitHub-Runner" 12
 
 # Windows Server 2025 (Datacenter Eval + actions runner + cloudbase-init).
 # Differences vs linux templates:
@@ -181,4 +181,4 @@ import_windows_virtual_machine() {
     qm template "$current_id"
 }
 
-import_windows_virtual_machine "https://alist.indexyz.me/d/Local/VirtualMachineImages/windows-2025-runner.qcow2" "Windows-2025-Runner" 14
+import_windows_virtual_machine "https://alist.indexyz.me/d/Local/VirtualMachineImages/windows-2025-runner.qcow2" "Windows-2025-Runner" 13
