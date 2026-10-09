@@ -7,7 +7,7 @@ DEBIAN_FRONTEND=noninteractive apt-get install \
   localepurge nano iperf3 gnupg2 zip unzip \
   sudo vnstat jq apt-transport-https ca-certificates \
   zsh git parted xfsprogs systemd-cron locales-all \
-  tmux build-essential \
+  tmux build-essential systemd-resolved \
   -y
 
 if [ "$(lsb_release -sc)" = "trixie" ]; then
@@ -15,6 +15,9 @@ if [ "$(lsb_release -sc)" = "trixie" ]; then
 else
   apt-get install dnsutils -y
 fi
+
+# Enable resolved
+systemctl enable --now systemd-resolved
 
 systemctl enable fstrim.timer
 update-initramfs -u -k all

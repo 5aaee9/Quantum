@@ -24,6 +24,7 @@ rm -vf \
   ~/.wget-hsts \
   /root/original-ks.cfg \
   /root/anaconda-ks.cfg \
-  /root/.wget-hsts
+  /root/.wget-hsts \
+  /etc/resolv.conf
 
 truncate -s 0 /etc/machine-id
