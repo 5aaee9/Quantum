@@ -24,7 +24,12 @@ rm -vf \
   ~/.wget-hsts \
   /root/original-ks.cfg \
   /root/anaconda-ks.cfg \
-  /root/.wget-hsts \
-  /etc/resolv.conf
+  /root/.wget-hsts
+
+# Drop build-time DNS addresses, but retain runtime resolver links, including
+# dangling links whose /run target will be recreated on the next boot.
+if [ ! -L /etc/resolv.conf ]; then
+  rm -vf /etc/resolv.conf
+fi
 
 truncate -s 0 /etc/machine-id
