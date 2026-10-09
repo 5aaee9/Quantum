@@ -1,7 +1,6 @@
 # Virtual Machien Image
 
 ## Support Platforms
-- Debian 11
 - Debian 12
 - Debian 13
 - Debian Unstable

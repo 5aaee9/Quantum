@@ -107,7 +107,6 @@ import_virtual_machine() {
     qm template "$current_id"
 }
 
-import_virtual_machine "https://alist.indexyz.me/d/Local/VirtualMachineImages/debian-11.qcow2" "Debian-11" 0
 import_virtual_machine "https://alist.indexyz.me/d/Local/VirtualMachineImages/debian-12.qcow2" "Debian-12" 1
 import_virtual_machine "https://alist.indexyz.me/d/Local/VirtualMachineImages/debian-13.qcow2" "Debian-13" 2
 import_virtual_machine "https://alist.indexyz.me/d/Local/VirtualMachineImages/debian-testing.qcow2" "Debian-Testing" 3
