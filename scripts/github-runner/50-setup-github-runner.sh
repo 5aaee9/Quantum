@@ -33,3 +33,9 @@ rm -f /tmp/actions-runner.tar.gz
 "$RUNNER_DIR/bin/installdependencies.sh"
 
 chown -R "$RUNNER_USER":"$RUNNER_USER" "$RUNNER_DIR"
+
+# Runner VMs are cloned from a long-idle template, so the persistent apt
+# timers fire within an hour of boot; unattended-upgrades then has
+# needrestart SIGTERM the runner service in the middle of a job. Ephemeral
+# runners are refreshed by rebuilding the image instead.
+systemctl mask --now apt-daily.timer apt-daily-upgrade.timer
