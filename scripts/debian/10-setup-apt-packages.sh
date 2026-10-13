@@ -44,5 +44,11 @@ fi
 systemctl enable fstrim.timer
 update-initramfs -u -k all
 
-wget -O /usr/local/bin/ffsend "https://glare.root.me/timvisee/ffsend/linux-x64-static"
-chmod +x /usr/local/bin/ffsend
+# Upstream only publishes x86-64 binaries. Do not install an unusable
+# x86 binary on ARM64; all other base packages above are architecture-native.
+if [ "$(dpkg --print-architecture)" = amd64 ]; then
+  wget -O /usr/local/bin/ffsend "https://glare.root.me/timvisee/ffsend/linux-x64-static"
+  chmod +x /usr/local/bin/ffsend
+else
+  echo "Skipping ffsend: upstream has no ARM64 release"
+fi

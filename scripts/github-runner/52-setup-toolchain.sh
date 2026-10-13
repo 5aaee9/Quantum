@@ -9,6 +9,12 @@ set -ex
 
 export DEBIAN_FRONTEND=noninteractive
 
+ARCH=$(dpkg --print-architecture)
+case "$ARCH" in
+  amd64|arm64) ;;
+  *) echo "Unsupported toolchain architecture: $ARCH" >&2; exit 1 ;;
+esac
+
 install -m 0755 -d /etc/apt/keyrings
 
 # --- Node.js 22 LTS (NodeSource) + yarn ------------------------------------
@@ -41,13 +47,13 @@ apt-get install -y git-lfs postgresql-client default-mysql-client
 # --- kubectl + helm: latest static binaries (no stale apt channel pin) -------
 kubectl_version=$(curl -fsSL https://dl.k8s.io/release/stable.txt)
 curl -fsSL -o /usr/local/bin/kubectl \
-  "https://dl.k8s.io/release/${kubectl_version}/bin/linux/amd64/kubectl"
+  "https://dl.k8s.io/release/${kubectl_version}/bin/linux/${ARCH}/kubectl"
 chmod +x /usr/local/bin/kubectl
 
 # get.helm.sh/helm-latest-version returns e.g. "v4.2.4" (leading v included)
 helm_version=$(curl -fsSL https://get.helm.sh/helm-latest-version | tr -d '"')
 curl -fsSL -o /tmp/helm.tar.gz \
-  "https://get.helm.sh/helm-${helm_version}-linux-amd64.tar.gz"
+  "https://get.helm.sh/helm-${helm_version}-linux-${ARCH}.tar.gz"
 tar -xzf /tmp/helm.tar.gz -C /tmp
-install -m 0755 /tmp/linux-amd64/helm /usr/local/bin/helm
-rm -rf /tmp/helm.tar.gz /tmp/linux-amd64
+install -m 0755 "/tmp/linux-${ARCH}/helm" /usr/local/bin/helm
+rm -rf /tmp/helm.tar.gz "/tmp/linux-${ARCH}"

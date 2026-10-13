@@ -1,0 +1,18 @@
+#cloud-config
+# Build-time credentials only, matching the existing ISO target.
+users:
+  - default
+  - name: root
+    lock_passwd: false
+disable_root: false
+ssh_pwauth: true
+chpasswd:
+  expire: false
+  users:
+    - name: root
+      password: 4tH2F34cEDRApj8Y@B26
+      type: text
+timezone: Asia/Hong_Kong
+runcmd:
+  - [sh, -c, "echo 'PermitRootLogin yes' > /etc/ssh/sshd_config.d/01-packer.conf"]
+  - [systemctl, restart, ssh]

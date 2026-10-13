@@ -14,6 +14,12 @@ set -ex
 RUNNER_DIR=/opt/actions-runner
 RUNNER_USER=runner
 
+case "$(dpkg --print-architecture)" in
+  amd64) RUNNER_ARCH=x64 ;;
+  arm64) RUNNER_ARCH=arm64 ;;
+  *) echo "Unsupported runner architecture" >&2; exit 1 ;;
+esac
+
 export DEBIAN_FRONTEND=noninteractive
 
 id -u "$RUNNER_USER" >/dev/null 2>&1 || useradd -m -s /bin/bash "$RUNNER_USER"
@@ -22,7 +28,7 @@ chmod 440 "/etc/sudoers.d/$RUNNER_USER"
 
 version=$(curl -fsSL https://api.github.com/repos/actions/runner/releases/latest | jq -r '.tag_name | ltrimstr("v")')
 curl -fsSL -o /tmp/actions-runner.tar.gz \
-  "https://github.com/actions/runner/releases/download/v${version}/actions-runner-linux-x64-${version}.tar.gz"
+  "https://github.com/actions/runner/releases/download/v${version}/actions-runner-linux-${RUNNER_ARCH}-${version}.tar.gz"
 
 mkdir -p "$RUNNER_DIR"
 tar -xzf /tmp/actions-runner.tar.gz -C "$RUNNER_DIR"

@@ -15,7 +15,7 @@ concurrency:
 jobs:
   build:
     name: Build ${{ matrix.builds.name }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.builds.runner || 'ubuntu-latest' }}
     strategy:
       # Dont cancel entire job if one failed
       fail-fast: false
@@ -47,6 +47,9 @@ jobs:
             codename: archlinux
           - name: GitHub Runner
             codename: github-runner
+          - name: GitHub Runner ARM64
+            codename: github-runner-arm64
+            runner: ubuntu-24.04-arm
           - name: Windows 2025 Runner
             codename: windows-2025-runner
             windows: true
@@ -76,6 +79,9 @@ jobs:
         run: |
           sudo apt-get update -y
           sudo apt-get install qemu-utils qemu-kvm libarchive-tools xorriso socat mtools dosfstools -y
+          if [ "${{ matrix.builds.codename }}" = github-runner-arm64 ]; then
+            sudo apt-get install -y qemu-system-arm qemu-efi-aarch64
+          fi
 
       - name: Build
         env:
