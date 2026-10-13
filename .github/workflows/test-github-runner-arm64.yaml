@@ -2,6 +2,7 @@ name: Test ARM64 runner
 
 on:
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
