@@ -2,6 +2,11 @@ name: Build images
 
 on:
   workflow_dispatch:
+    inputs:
+      probe_only:
+        description: Only probe ARM64 KVM availability
+        type: boolean
+        default: false
   schedule:
   - cron: '0 14 * * 1'
   push:
@@ -17,6 +22,8 @@ jobs:
   test-arm64:
     if: github.event_name == 'workflow_dispatch'
     uses: ./.github/workflows/test-github-runner-arm64.yaml
+    with:
+      probe_only: ${{ inputs.probe_only }}
 
   build:
     if: github.event_name != 'workflow_dispatch'

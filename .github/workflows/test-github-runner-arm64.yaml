@@ -2,7 +2,16 @@ name: Test ARM64 runner
 
 on:
   workflow_dispatch:
+    inputs:
+      probe_only:
+        description: Only probe ARM64 KVM availability
+        type: boolean
+        default: false
   workflow_call:
+    inputs:
+      probe_only:
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -29,18 +38,39 @@ jobs:
           sudo apt-get install -y qemu-utils qemu-system-arm qemu-efi-aarch64 xorriso
           uname -m
           qemu-system-aarch64 --version
+      - name: Probe ARM64 KVM availability
+        run: |
+          set -o pipefail
+          {
+            uname -a
+            sudo modprobe kvm 2>&1 || true
+            ls -l /dev/kvm 2>&1 || true
+            sudo dmesg | grep -iE "kvm|hypervisor|EL2" || true
+            set +e
+            sudo timeout 5 qemu-system-aarch64 -machine virt,accel=kvm,gic-version=host -cpu host -m 128 -S -nodefaults -display none -monitor none -serial none
+            rc=$?
+            set -e
+            if [ "$rc" = 124 ]; then
+              echo "KVM probe: available (VM initialized successfully)"
+            else
+              echo "KVM probe: unavailable (QEMU exit $rc)"
+            fi
+          } 2>&1 | tee github-runner-arm64-kvm.log
+
       - name: Validate scripts and Packer templates
         run: |
           bash tests/github-runner-architecture.sh
           sudo packer init targets/github-runner-arm64
           sudo packer validate -var-file overrides/headless.pkr.hcl targets/github-runner-arm64
       - name: Build image and run guest smoke tests
+        if: ${{ !inputs.probe_only }}
         run: |
           set -o pipefail
           just build github-runner-arm64 2>&1 | tee github-runner-arm64-build.log
           qemu-img check github-runner-arm64.qcow2
       # Test branches must never publish to the production Alist endpoint.
       - name: Upload test image
+        if: ${{ !inputs.probe_only }}
         uses: actions/upload-artifact@v4
         with:
           name: github-runner-arm64-qcow2
@@ -54,6 +84,7 @@ jobs:
           name: github-runner-arm64-logs
           path: |
             github-runner-arm64-build.log
+            github-runner-arm64-kvm.log
             github-runner-arm64-serial.log
           retention-days: 7
           if-no-files-found: ignore
