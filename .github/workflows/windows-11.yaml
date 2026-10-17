@@ -1,0 +1,78 @@
+name: Build Windows 11
+
+# Keep opt-in until an end-to-end Windows conversion and guest boot pass.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: windows-11-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  iso:
+    runs-on: windows-2025
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v5
+      - name: Test UUP selection and template contracts
+        shell: pwsh
+        run: ./tests/windows-11-uup.ps1
+      - name: Convert latest public Windows 11 to Enterprise ISO
+        shell: powershell
+        run: ./scripts/build-windows-11-iso.ps1 -WorkDirectory D:\uup-windows-11
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-11-iso
+          path: |
+            D:\uup-windows-11\windows-11.iso
+            D:\uup-windows-11\windows-11.iso.sha256
+            D:\uup-windows-11\windows-11.json
+          compression-level: 0
+          retention-days: 1
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: windows-11-uup-logs
+          path: |
+            D:\uup-windows-11\*.log
+            D:\uup-windows-11\retail.json
+            D:\uup-windows-11\convert\*.log
+          retention-days: 7
+  qcow2:
+    needs: iso
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-11-iso
+          path: iso
+      - uses: hashicorp/setup-packer@v3.4.0
+        with:
+          version: '1.15.4'
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-x86 qemu-utils ovmf swtpm libarchive-tools xorriso
+          sudo setfacl -m "u:$(id -un):rw" /dev/kvm
+      - name: Build qcow2
+        run: bash scripts/build-windows-11.sh iso/windows-11.iso
+      # No automatic publication before clone/Cloudbase-Init validation.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-11-qcow2
+          path: windows-11.qcow2
+          compression-level: 0
+          retention-days: 3
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-11-build-logs
+          path: |
+            windows-11-serial.log
+            packer-windows-11.log
+          retention-days: 7

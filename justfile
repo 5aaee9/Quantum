@@ -31,6 +31,11 @@ build-windows VARIANT: fetch-windows-drivers
 fetch-windows-drivers:
   bash scripts/fetch-windows-drivers.sh
 
+# UUP ISO creation runs on elevated Windows, see docs/windows-11-image.md.
+# Keep the validated ISO's .sha256 sidecar beside it.
+build-windows-11 ISO:
+  bash scripts/build-windows-11.sh "{{ISO}}"
+
 prepare-nixos:
   nix build nixpkgs#OVMFFull.fd
   sudo mkdir -p /usr/share/OVMF

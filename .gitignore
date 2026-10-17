@@ -11,3 +11,7 @@ windows-2025-runner-status.img
 windows-2025-runner-monitor.sock
 guest-status.log
 windows-screens/
+windows-11-*.sock
+windows-11-serial.log
+packer-windows-11.log
+iso/

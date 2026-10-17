@@ -1,0 +1,85 @@
+# Windows 11 Enterprise template
+
+Target: `windows-11`, x64, en-US, Enterprise (not LTSC), no GitHub runner.
+Installs Cloudbase-Init 1.1.8, OpenSSH, VirtIO drivers and QEMU Guest Agent.
+Windows licensing/activation is the deployer's responsibility; the answer file
+uses Microsoft's public Enterprise KMS client setup key, not an activation license.
+
+## 1. Generate the ISO on Windows
+
+Use an elevated Windows PowerShell on a modern Windows installation, with at
+least 40 GB free space and internet access:
+
+```powershell
+.\scripts\build-windows-11-iso.ps1 -WorkDirectory C:\uup-windows-11
+```
+
+The directory must not already exist and must not contain spaces. The script:
+
+1. Queries the official UUP dump `fetchupd.php?arch=amd64&ring=Retail` endpoint
+   (the homepage's **Latest Public Release** option).
+2. Selects the newest Windows 11 x64 feature build in that response, excluding
+   Insider, Preview and cumulative-only entries. API failures fail the build;
+   there is no fallback to an arbitrary previously known release.
+3. Downloads the official Pro conversion package, enables updates and the
+   Enterprise virtual edition, and retains Windows 11 apps.
+4. Runs the Windows converter with a bounded timeout, verifies the ISO contains
+   `Windows 11 Enterprise` and the requested image version, and writes:
+   `windows-11.iso`, `windows-11.iso.sha256`, `windows-11.json`.
+
+Upstream documentation:
+<https://git.uupdump.net/uup-dump/misc/src/branch/master/FAQ.md>
+
+**Do not use the Linux converter for current Windows 11.** It cannot integrate
+updates correctly and may omit required apps. Installing PowerShell on Linux
+does not satisfy the Windows DISM/conversion requirement.
+
+## 2. Build qcow2 on Linux/KVM
+
+Transfer the ISO and its `.sha256` sidecar together. From the repository root:
+
+```sh
+# Debian/Ubuntu host prerequisites (plus Packer and optionally just):
+sudo apt-get install qemu-system-x86 qemu-utils ovmf swtpm libarchive-tools xorriso curl
+just build-windows-11 /path/to/windows-11.iso
+# Or: bash scripts/build-windows-11.sh /path/to/windows-11.iso
+```
+
+The user needs access to `/dev/kvm`. The wrapper verifies the ISO hash, stages
+Windows 11 drivers and only the required payloads, starts an isolated TPM 2.0
+emulator, and builds using UEFI + SATA. It refuses to overwrite existing outputs.
+Provisioning stages VirtIO storage drivers for deployment, installs Cloudbase-Init
+and QEMU Guest Agent, restores UAC, removes the temporary account/SSH host keys,
+and generalizes with Sysprep. Packer requires the serial `BUILD_SUCCESS` marker.
+The result is `windows-11.qcow2`; both intermediate and compressed disks receive
+`qemu-img check`. TPM state is build-only and must not be reused for clones.
+
+## Deployment
+
+Use q35, UEFI, a fresh EFI disk and TPM 2.0 per VM, at least 4 GB memory and a
+VirtIO SCSI controller. Attach a Proxmox `cloudinit` disk with
+`--citype configdrive2`, `--ciuser Administrator`, an individual password and/or
+SSH keys. Cloudbase-Init supports ConfigDrive and NoCloud metadata. Never expose
+a clone before confirming its credentials have been replaced. The installed
+Windows image is not preactivated.
+
+## CI and verification status
+
+`.github/workflows/windows-11.yaml` is **manual-only** initially: Windows generates
+and validates the ISO, then Ubuntu/KVM builds the qcow2. ISO artifacts expire
+after one day; qcow2 artifacts after three days. It does not publish to Alist or
+change the existing weekly build matrix until end-to-end verification passes.
+
+Local checks:
+
+```sh
+pwsh -NoProfile -File tests/windows-11-uup.ps1
+bash -n scripts/build-windows-11.sh scripts/fetch-windows-drivers.sh
+```
+
+Before enabling scheduled publication, verify a real UUP conversion, a complete
+Packer build and a fresh-UEFI/TPM clone boot with ConfigDrive. Check edition/build,
+Cloudbase-Init hostname/password/SSH-key application, VirtIO network/storage,
+QEMU Guest Agent, absence of the `packer` and `runner` accounts, and absence of
+`C:\actions-runner`. Static tests and the build success marker do not replace
+this first-boot test.

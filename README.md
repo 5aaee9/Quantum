@@ -15,3 +15,4 @@
 - Arch Linux
 - GitHub Runner (Ubuntu 24.04, actions/runner, Docker, Node.js, Python, gh/kubectl/helm/terraform)
 - Windows 2025 Runner (Windows Server 2025 Datacenter Eval, actions/runner, Git, pwsh, Cloudbase-Init)
+- Windows 11 Enterprise (x64, en-US, Cloudbase-Init, no runner; [experimental UUP build](docs/windows-11-image.md), end-to-end validation pending)

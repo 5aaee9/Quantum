@@ -16,6 +16,12 @@
 
 set -euo pipefail
 
+variant=${1:-windows-2025-runner}
+case "$variant" in
+    windows-2025-runner|windows-11) ;;
+    *) echo "Unsupported Windows target: $variant" >&2; exit 1 ;;
+esac
+
 VIRTIO_ISO_URL="https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/stable-virtio/virtio-win.iso"
 ISO_PATH="drivers/virtio-win.iso"
 
@@ -31,7 +37,7 @@ if command -v bsdtar >/dev/null 2>&1; then
     #    integrity check below asserts that everything we need made it out.
     (cd drivers && bsdtar -xf virtio-win.iso \
         "amd64/2k25" "amd64/w11" \
-        "NetKVM/2k22" \
+        "NetKVM/2k22" "NetKVM/2k25" "NetKVM/w11" "vioserial/w11" "guest-agent" \
         "vioscsi/2k25" "vioscsi/w11" \
         "vioserial/2k25" \
         "viostor/2k25" "viostor/w11" \
@@ -43,6 +49,10 @@ elif command -v xorriso >/dev/null 2>&1; then
         -extract /amd64/2k25 drivers/amd64/2k25 \
         -extract /amd64/w11 drivers/amd64/w11 \
         -extract /NetKVM/2k22 drivers/NetKVM/2k22 \
+        -extract /NetKVM/2k25 drivers/NetKVM/2k25 \
+        -extract /NetKVM/w11 drivers/NetKVM/w11 \
+        -extract /vioserial/w11 drivers/vioserial/w11 \
+        -extract /guest-agent drivers/guest-agent \
         -extract /vioscsi/2k25 drivers/vioscsi/2k25 \
         -extract /vioscsi/w11 drivers/vioscsi/w11 \
         -extract /vioserial/2k25 drivers/vioserial/2k25 \
@@ -103,11 +113,13 @@ gh_asset() {  # gh_asset <repo> <asset-glob>
 fetch drivers/OpenSSH-Win64.zip \
     "https://github.com/PowerShell/Win32-OpenSSH/releases/download/10.0.0.0p2-Preview/OpenSSH-Win64.zip"
 
+if [[ "$variant" == windows-2025-runner ]]; then
 fetch drivers/payloads/Git-64-bit.exe \
     "$(gh_asset git-for-windows/git 'Git-.*-64-bit\.exe')"
 
 fetch drivers/payloads/PowerShell-win-x64.msi \
     "$(gh_asset PowerShell/PowerShell 'PowerShell-.*-win-x64\.msi')"
+fi
 
 fetch drivers/payloads/CloudbaseInitSetup.msi \
     "https://github.com/cloudbase/cloudbase-init/releases/download/1.1.8/CloudbaseInitSetup_1_1_8_x64.msi"
@@ -115,7 +127,19 @@ fetch drivers/payloads/CloudbaseInitSetup.msi \
 fetch drivers/payloads/EjectVolumeMedia.exe \
     "https://github.com/rgl/EjectVolumeMedia/releases/download/v1.0.0/EjectVolumeMedia.exe"
 
+if [[ "$variant" == windows-2025-runner ]]; then
 fetch drivers/payloads/actions-runner-win-x64.zip \
     "$(gh_asset actions/runner 'actions-runner-win-x64-[0-9.]+\.zip')"
+else
+    # Flatten only the Windows 11 driver payloads onto the provision CD.
+    mkdir -p drivers/windows-11
+    for driver in NetKVM vioscsi vioserial viostor; do
+        for extension in inf cat sys; do
+            cp drivers/"$driver"/w11/amd64/*."$extension" drivers/windows-11/
+        done
+    done
+    cp drivers/NetKVM/w11/amd64/*.exe drivers/windows-11/
+    cp drivers/guest-agent/qemu-ga-x86_64.msi drivers/windows-11/
+fi
 
 echo "virtio drivers + all provisioner payloads ready under drivers/"
