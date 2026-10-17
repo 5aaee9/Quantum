@@ -15,6 +15,22 @@ function Select-PublicWindows11Build($Response) {
     return $candidates[0]
 }
 
+function Get-PublicWindows11BuildFromHtml([string]$Html) {
+    # Only accept the official Retail page's selectlang links, never search
+    # results or arbitrary recently-added builds (which may be Insider).
+    $pattern = '<a\s+href="selectlang\.php\?id=([0-9a-fA-F-]+(?:_rev\.\d+)?)"\s*>\s*([^<]+)</a>'
+    $updates = @()
+    foreach ($match in [regex]::Matches($Html, $pattern)) {
+        $label = [Net.WebUtility]::HtmlDecode($match.Groups[2].Value).Trim()
+        if ($label -notmatch '^(.*?)\s+\((\d+\.\d+)\)\s+amd64$') { continue }
+        $updates += [pscustomobject]@{
+            updateId=$match.Groups[1].Value; arch='amd64'
+            updateTitle=$Matches[1]; foundBuild=$Matches[2]
+        }
+    }
+    return Select-PublicWindows11Build ([pscustomobject]@{updateArray=$updates})
+}
+
 function Set-UupConfigValue([string]$Config, [string]$Key, [string]$Value) {
     $pattern = '(?m)^' + [regex]::Escape($Key) + '\s*=.*$'
     if ([regex]::Matches($Config, $pattern).Count -ne 1) { throw "Missing/ambiguous converter setting: $Key" }

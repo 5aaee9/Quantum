@@ -19,8 +19,9 @@ The directory must not already exist and must not contain spaces. The script:
 1. Queries the official UUP dump `fetchupd.php?arch=amd64&ring=Retail` endpoint
    (the homepage's **Latest Public Release** option).
 2. Selects the newest Windows 11 x64 feature build in that response, excluding
-   Insider, Preview and cumulative-only entries. API failures fail the build;
-   there is no fallback to an arbitrary previously known release.
+   Insider, Preview and cumulative-only entries. If the JSON API fails, it
+   queries the same official Latest Public Release HTML page. If neither returns
+   a complete Retail build, it fails rather than using an old/search result.
 3. Downloads the official Pro conversion package, enables updates and the
    Enterprise virtual edition, and retains Windows 11 apps.
 4. Runs the Windows converter with a bounded timeout, verifies the ISO contains

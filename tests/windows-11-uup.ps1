@@ -24,6 +24,17 @@ foreach ($bad in @(
     try { Select-PublicWindows11Build $bad | Out-Null } catch { $failed = $true }
     Assert $failed 'Invalid UUP response accepted'
 }
+$html = @'
+<a href="selectlang.php?id=00000000-0000-0000-0000-000000000001">Critical OOBE Update for Windows 11 - KB5128942 (26100.9544) (2) amd64</a>
+<a href="selectlang.php?id=00000000-0000-0000-0000-000000000002">.NET Framework Security Update for Windows 11 (26200.9363) amd64</a>
+<a href="selectlang.php?id=00000000-0000-0000-0000-000000000003">Windows 11, version 25H2 (26200.9807) amd64</a>
+'@
+Assert ((Get-PublicWindows11BuildFromHtml $html).foundBuild -eq '26200.9807') 'Retail HTML selection failed'
+foreach ($htmlError in @('<html>Rate limited</html>', '<a href="https://evil.invalid/selectlang.php?id=00000000-0000-0000-0000-000000000003">Windows 11 (26200.9807) amd64</a>')) {
+    $failed = $false
+    try { Get-PublicWindows11BuildFromHtml $htmlError | Out-Null } catch { $failed = $true }
+    Assert $failed 'Invalid Retail HTML accepted'
+}
 $config = @'
 [convert-UUP]
 AutoStart =0

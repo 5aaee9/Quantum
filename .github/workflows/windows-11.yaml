@@ -39,6 +39,7 @@ jobs:
           path: |
             D:\uup-windows-11\*.log
             D:\uup-windows-11\retail.json
+            D:\uup-windows-11\retail.html
             D:\uup-windows-11\convert\*.log
           retention-days: 7
   qcow2:

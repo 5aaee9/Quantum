@@ -31,8 +31,16 @@ function Request-Uup([string]$Uri, [string]$OutFile) {
 
 # Same Retail channel as the homepage's Latest Public Release x64 option.
 $apiUrl = 'https://api.uupdump.net/fetchupd.php?arch=amd64&ring=Retail'
-Request-Uup $apiUrl "$WorkDirectory\retail.json"
-$build = Select-PublicWindows11Build ((Get-Content "$WorkDirectory\retail.json" -Raw | ConvertFrom-Json).response)
+$sourceUrl = $apiUrl
+try {
+    Request-Uup $apiUrl "$WorkDirectory\retail.json"
+    $build = Select-PublicWindows11Build ((Get-Content "$WorkDirectory\retail.json" -Raw | ConvertFrom-Json).response)
+} catch {
+    Write-Warning "Retail JSON API failed: $($_.Exception.Message). Trying the official Latest Public Release page."
+    $sourceUrl = 'https://uupdump.net/fetchupd.php?arch=amd64&ring=retail'
+    Request-Uup $sourceUrl "$WorkDirectory\retail.html"
+    $build = Get-PublicWindows11BuildFromHtml (Get-Content "$WorkDirectory\retail.html" -Raw)
+}
 Write-Host "Selected $($build.updateTitle) / $($build.updateId)"
 # Enterprise is a virtual edition derived from Pro, not a direct UUP edition.
 $packageUrl = "https://uupdump.net/get.php?id=$($build.updateId)&pack=en-us&edition=professional&autodl=2"
@@ -79,6 +87,6 @@ $hash = (Get-FileHash $destination -Algorithm SHA256).Hash.ToLowerInvariant()
 @{
     updateId=$build.updateId; title=$build.updateTitle; build=$build.foundBuild
     architecture='amd64'; language='en-us'; edition='Enterprise'; channel='Retail'
-    sha256=$hash; source=$apiUrl; package=$packageUrl
+    sha256=$hash; source=$sourceUrl; package=$packageUrl
 } | ConvertTo-Json | Set-Content -Encoding ascii "$WorkDirectory\windows-11.json"
 Write-Host "Validated ISO: $destination"
