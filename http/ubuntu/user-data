@@ -4,7 +4,7 @@ autoinstall:
   keyboard:
     layout: us
   locale: en_US.UTF-8
-  timezone: Asia/Hong_Kong
+  timezone: Asia/Singapore
   network:
     version: 2
     ethernets:

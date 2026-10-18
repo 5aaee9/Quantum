@@ -111,7 +111,7 @@
                 <HideWirelessSetupInOOBE>true</HideWirelessSetupInOOBE>
                 <ProtectYourPC>1</ProtectYourPC>
             </OOBE>
-            <TimeZone>UTC</TimeZone>
+            <TimeZone>Singapore Standard Time</TimeZone>
             <UserAccounts>
                 <AdministratorPassword>
                     <Value>NAB0AEgAMgBGADMANABjAEUARABSAEEAcABqADgAWQBAAEIAMgA2AEEAZABtAGkAbgBpAHMAdAByAGEAdABvAHIAUABhAHMAcwB3AG8AcgBkAA==</Value>

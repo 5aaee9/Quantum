@@ -34,7 +34,7 @@ genfstab -U /mnt >> /mnt/etc/fstab
 arch-chroot /mnt /bin/bash <<'CHROOT'
 set -euxo pipefail
 
-ln -sf /usr/share/zoneinfo/Asia/Hong_Kong /etc/localtime
+ln -sf /usr/share/zoneinfo/Asia/Singapore /etc/localtime
 hwclock --systohc
 
 cat > /etc/locale.gen <<'LOCALE'
