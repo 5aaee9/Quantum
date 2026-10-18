@@ -67,8 +67,12 @@ Windows image is not preactivated.
 ## CI and verification status
 
 `.github/workflows/windows-11.yaml` is **manual-only** initially: Windows generates
-and validates the ISO, then Ubuntu/KVM builds the qcow2. ISO artifacts expire
-after one day; qcow2 artifacts after three days. It does not publish to Alist or
+and validates the ISO, then Ubuntu/KVM builds the qcow2. An `always()` cleanup
+job deletes this run's intermediate ISO artifact after the build, including
+failures; one-day expiration is only a fallback if cleanup cannot run. Conversion
+and Linux workspaces are also cleaned after use. Download one local ISO backup
+while the qcow2 job is running if debugging is needed. qcow2 artifacts expire
+after three days. It does not publish to Alist or
 change the existing weekly build matrix until end-to-end verification passes.
 
 Local checks:

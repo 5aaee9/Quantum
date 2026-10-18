@@ -42,6 +42,13 @@ jobs:
             D:\uup-windows-11\retail.html
             D:\uup-windows-11\convert\*.log
           retention-days: 7
+      - name: Remove ISO conversion workspace
+        if: always()
+        shell: powershell
+        run: |
+          if (Test-Path D:\uup-windows-11) {
+            Remove-Item D:\uup-windows-11 -Recurse -Force
+          }
   qcow2:
     needs: iso
     runs-on: ubuntu-latest
@@ -58,10 +65,25 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y qemu-system-x86 qemu-utils ovmf swtpm libarchive-tools xorriso
+          sudo apt-get install -y qemu-system-x86 qemu-utils ovmf swtpm libarchive-tools xorriso socat imagemagick
           sudo setfacl -m "u:$(id -un):rw" /dev/kvm
       - name: Build qcow2
-        run: bash scripts/build-windows-11.sh iso/windows-11.iso
+        run: |
+          mkdir -p windows-11-screens
+          (
+            while true; do
+              if [ -S windows-11-monitor.sock ]; then
+                printf 'screendump %s/windows-11-screens/latest.ppm\n' "$PWD" | socat -t 2 - UNIX-CONNECT:windows-11-monitor.sock || true
+                if [ -f windows-11-screens/latest.ppm ]; then
+                  convert windows-11-screens/latest.ppm windows-11-screens/latest.png || true
+                fi
+              fi
+              sleep 60
+            done
+          ) &
+          monitor_pid=$!
+          trap 'kill "$monitor_pid" 2>/dev/null || true' EXIT
+          bash scripts/build-windows-11.sh iso/windows-11.iso
       # No automatic publication before clone/Cloudbase-Init validation.
       - uses: actions/upload-artifact@v4
         with:
@@ -76,4 +98,29 @@ jobs:
           path: |
             windows-11-serial.log
             packer-windows-11.log
+            windows-11-screens/latest.png
           retention-days: 7
+      - name: Remove local intermediate media
+        if: always()
+        run: rm -rf iso drivers/virtio-win.iso
+
+  cleanup-iso:
+    needs: [iso, qcow2]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Delete this run's intermediate ISO artifact
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, {
+              owner: context.repo.owner, repo: context.repo.repo, run_id: context.runId,
+            });
+            for (const artifact of artifacts.filter(a => a.name === 'windows-11-iso')) {
+              await github.rest.actions.deleteArtifact({
+                owner: context.repo.owner, repo: context.repo.repo, artifact_id: artifact.id,
+              });
+              core.info(`Deleted intermediate ISO artifact ${artifact.id}`);
+            }
