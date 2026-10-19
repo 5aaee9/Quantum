@@ -110,7 +110,16 @@ Subsystem sftp "C:/Program Files/OpenSSH/sftp-server.exe"
 
 Log '=== cloudbase-init ==='
 $cb = Payload 'CloudbaseInitSetup.msi'
-if ($cb) { Run 'msiexec' @('/i', $cb, '/qn', '/norestart') 300 }
+if ($cb) {
+    # CI's nested VM is slower than local KVM. Keep a bounded installer budget
+    # and preserve its diagnostics instead of treating a timeout as success.
+    try {
+        Run 'msiexec' @('/i', $cb, '/qn', '/norestart', 'RUN_SERVICE_AS_LOCAL_SYSTEM=1', '/l*v', 'C:\Windows\Temp\cloudbase-install.log') 900
+    } catch {
+        Get-Content 'C:\Windows\Temp\cloudbase-install.log' -Tail 30 -ErrorAction SilentlyContinue | ForEach-Object { Log "MSI: $_" }
+        throw
+    }
+}
 $cbHome = 'C:\Program Files\Cloudbase Solutions\Cloudbase-Init'
 Stop-Service cloudbase-init -Force
 # Do not run the normal service during specialize: Windows may still replace
