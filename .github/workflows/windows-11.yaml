@@ -65,7 +65,7 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y qemu-system-x86 qemu-utils ovmf swtpm libarchive-tools xorriso socat imagemagick
+          sudo apt-get install -y qemu-system-x86 qemu-utils ovmf swtpm libarchive-tools xorriso socat imagemagick sshpass
           sudo setfacl -m "u:$(id -un):rw" /dev/kvm
       - name: Build qcow2
         run: |
@@ -84,7 +84,9 @@ jobs:
           monitor_pid=$!
           trap 'kill "$monitor_pid" 2>/dev/null || true' EXIT
           bash scripts/build-windows-11.sh iso/windows-11.iso
-      # No automatic publication before clone/Cloudbase-Init validation.
+      - name: Verify fresh ConfigDrive clone
+        run: bash tests/windows-11-smoke.sh windows-11.qcow2
+      # Publish artifacts only after clone/Cloudbase-Init validation.
       - uses: actions/upload-artifact@v4
         with:
           name: windows-11-qcow2
@@ -99,6 +101,7 @@ jobs:
             windows-11-serial.log
             packer-windows-11.log
             windows-11-screens/latest.png
+            windows-11-smoke-serial.log
           retention-days: 7
       - name: Remove local intermediate media
         if: always()

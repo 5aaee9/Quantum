@@ -51,7 +51,10 @@ Windows 11 drivers and only the required payloads, starts an isolated TPM 2.0
 emulator, and builds using UEFI + SATA. It refuses to overwrite existing outputs.
 Provisioning stages VirtIO storage drivers for deployment, installs Cloudbase-Init
 and QEMU Guest Agent, restores UAC, removes the temporary account/SSH host keys,
-and generalizes with Sysprep. Packer requires the serial `BUILD_SUCCESS` marker.
+and generalizes with Sysprep. Cloudbase-Init runs as LocalSystem and is enabled
+by SetupComplete, after Windows has finished setting its computer name. Clone
+specialize enables Administrator with a fresh random password; metadata then
+replaces it. Ubuntu builds use Secure-Boot-capable OVMF, not its plain firmware. Packer requires the serial `BUILD_SUCCESS` marker.
 The result is `windows-11.qcow2`; both intermediate and compressed disks receive
 `qemu-img check`. TPM state is build-only and must not be reused for clones.
 
@@ -66,7 +69,7 @@ Windows image is not preactivated.
 
 ## CI and verification status
 
-`.github/workflows/windows-11.yaml` is **manual-only** initially: Windows generates
+`.github/workflows/windows-11.yaml` is **manual-only**: Windows generates
 and validates the ISO, then Ubuntu/KVM builds the qcow2. An `always()` cleanup
 job deletes this run's intermediate ISO artifact after the build, including
 failures; one-day expiration is only a fallback if cleanup cannot run. Conversion
@@ -75,6 +78,10 @@ while the qcow2 job is running if debugging is needed. qcow2 artifacts expire
 after three days. It does not publish to Alist or
 change the existing weekly build matrix until end-to-end verification passes.
 
+The workflow gates the qcow2 artifact on `tests/windows-11-smoke.sh`: a disposable
+fresh-UEFI/TPM, virtio-scsi ConfigDrive boot, including key and password SSH login.
+The test removes its metadata ISO (including its random test password) on exit.
+
 Local checks:
 
 ```sh
@@ -82,9 +89,8 @@ pwsh -NoProfile -File tests/windows-11-uup.ps1
 bash -n scripts/build-windows-11.sh scripts/fetch-windows-drivers.sh
 ```
 
-Before enabling scheduled publication, verify a real UUP conversion, a complete
-Packer build and a fresh-UEFI/TPM clone boot with ConfigDrive. Check edition/build,
-Cloudbase-Init hostname/password/SSH-key application, VirtIO network/storage,
-QEMU Guest Agent, absence of the `packer` and `runner` accounts, and absence of
-`C:\actions-runner`. Static tests and the build success marker do not replace
-this first-boot test.
+A real UUP-generated 25H2 / 26200.9807 Enterprise ISO passed local Packer and
+fresh-clone checks: hostname, password/key authentication, VirtIO network/storage,
+Guest Agent, UAC, TPM, and absence of runner/packer accounts and runner payloads.
+Rerun `bash tests/windows-11-smoke.sh windows-11.qcow2` for each new image.
+Static tests and the build success marker do not replace this first-boot test.

@@ -113,7 +113,17 @@ $cb = Payload 'CloudbaseInitSetup.msi'
 if ($cb) { Run 'msiexec' @('/i', $cb, '/qn', '/norestart') 300 }
 $cbHome = 'C:\Program Files\Cloudbase Solutions\Cloudbase-Init'
 Stop-Service cloudbase-init -Force
-Set-Service cloudbase-init -StartupType Automatic
+# Do not run the normal service during specialize: Windows may still replace
+# the computer name. SetupComplete enables it only after setup has finished.
+Set-Service cloudbase-init -StartupType Manual
+New-Item -ItemType Directory -Force 'C:\Windows\Setup\Scripts' | Out-Null
+Set-Content -Encoding ascii 'C:\Windows\Setup\Scripts\SetupComplete.cmd' @'
+@echo off
+sc.exe config cloudbase-init start= auto
+net start cloudbase-init
+exit /b 0
+'@
+Run 'sc.exe' @('config', 'cloudbase-init', 'obj=', 'LocalSystem') 60 @(0)
 if (Test-Path $cbHome) {
     # write cloudbase-init.conf with a hardcoded standard plugin list — the
     # `python -c "import cloudbaseinit; print(CONF.plugins)"` enumeration is
@@ -132,6 +142,7 @@ log_file=cloudbase-init.log
 bsdtar_path=$cbHome\bin\bsdtar.exe
 mtools_path=$cbHome\bin\
 check_latest_version=false
+reset_service_password=false
 local_scripts_path=$cbHome\LocalScripts
 plugins=cloudbaseinit.plugins.common.mtu.MTUPlugin,
          cloudbaseinit.plugins.common.sethostname.SetHostNamePlugin,
@@ -151,11 +162,6 @@ metadata_services=cloudbaseinit.metadata.services.nocloudservice.NoCloudConfigDr
 locations=cdrom
 types=iso
 "@
-    # Specialize performs only early hostname/MTU setup; the normal service
-    # applies user/password/network metadata afterwards.
-    $earlyConfig = (Get-Content $cbConf -Raw) -replace '(?s)plugins=.*?(?=metadata_services=)', "plugins=cloudbaseinit.plugins.common.mtu.MTUPlugin,cloudbaseinit.plugins.common.sethostname.SetHostNamePlugin`n"
-    $earlyConfig = $earlyConfig.Replace('[DEFAULT]', "[DEFAULT]`nallow_reboot=false`nstop_service_on_exit=false")
-    Set-Content -Encoding ascii "$cbHome\conf\cloudbase-init-unattend.conf" $earlyConfig
     # regenerate sshd host keys on every clone (sysprep /generalize doesn't,
     # and we delete them at seal) via a cloudbase-init LocalScript.
     $ls = "$cbHome\LocalScripts"
@@ -198,6 +204,25 @@ Log '=== sysprep + shutdown ==='
 $ns = New-Object Xml.XmlNamespaceManager($seal.NameTable)
 $ns.AddNamespace('u', 'urn:schemas-microsoft-com:unattend')
 $seal.SelectSingleNode('//u:PersistAllDeviceInstalls', $ns).InnerText = 'false'
+# Client Sysprep disables the built-in administrator. Enable it at clone
+# specialize with a fresh random password, before metadata/password/key plugins.
+# Never enable a clone using the shared build password.
+$commands = $seal.SelectSingleNode('//u:settings[@pass="specialize"]//u:RunSynchronous', $ns)
+# The service starts in SetupComplete, so remove the installer's early
+# Cloudbase-Init invocation (which may race the normal service/setup).
+$commands.RemoveAll()
+$command = $seal.CreateElement('RunSynchronousCommand', $seal.DocumentElement.NamespaceURI)
+$command.SetAttribute('action', 'http://schemas.microsoft.com/WMIConfig/2002/State', 'add')
+foreach ($entry in @{
+    Order = '1'
+    Path = 'powershell.exe -NoProfile -Command "$p = ConvertTo-SecureString (([guid]::NewGuid().ToString()) + ''aA1!'') -AsPlainText -Force; Set-LocalUser Administrator -Password $p; Enable-LocalUser Administrator"'
+    Description = 'Initialize the clone administrator before metadata provisioning'
+}.GetEnumerator()) {
+    $element = $seal.CreateElement($entry.Key, $seal.DocumentElement.NamespaceURI)
+    $element.InnerText = $entry.Value
+    [void]$command.AppendChild($element)
+}
+[void]$commands.PrependChild($command)
 if ($seal.OuterXml -match '%ARCH%|%INSTALLDIR%|%CLOUDBASEINITCONFFOLDER%') {
     throw 'Cloudbase-Init installer left unresolved unattend placeholders'
 }

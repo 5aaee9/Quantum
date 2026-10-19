@@ -37,9 +37,16 @@ for ((i=0; i<50; i++)); do
     sleep 0.1
 done
 [[ -S windows-11-tpm.sock ]]
+firmware_args=()
+# Ubuntu's plain OVMF_CODE_4M.fd has no Secure Boot capability. Windows 11
+# rejects it before specialize. Prefer the secure-capable firmware there;
+# NixOS prepare-nixos installs OVMFFull at the default path already.
+if [[ -f /usr/share/OVMF/OVMF_CODE_4M.secboot.fd ]]; then
+    firmware_args+=(-var 'efi_firmware_code=/usr/share/OVMF/OVMF_CODE_4M.secboot.fd')
+fi
 PACKER_LOG=1 PACKER_LOG_PATH="$PWD/packer-windows-11.log" packer build \
     -var 'headless=true' -var "iso_url=$iso" -var "iso_checksum=sha256:$expected" \
-    targets/windows-11
+    "${firmware_args[@]}" targets/windows-11
 bash scripts/check-windows-build.sh windows-11-serial.log
 qemu-img check outputs/windows-11/packer-windows-11
 qemu-img convert -O qcow2 -c outputs/windows-11/packer-windows-11 windows-11.qcow2

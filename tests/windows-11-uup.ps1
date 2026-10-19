@@ -68,6 +68,10 @@ Assert ($null -eq $answer.SelectSingleNode('//u:component[@name="Microsoft-Windo
 $provision = Get-Content "$PSScriptRoot/../http/windows-11/provision-first-logon.ps1" -Raw
 Assert ($provision.Contains("Payload 'CloudbaseInitSetup.msi'")) 'Cloudbase-Init missing'
 Assert ($provision.Contains("Payload 'qemu-ga-x86_64.msi'")) 'Guest agent missing'
+Assert ($provision.Contains('Set-Service cloudbase-init -StartupType Manual')) 'Cloudbase-Init can race Windows specialize'
+Assert ($provision.Contains('SetupComplete.cmd')) 'Missing post-setup service start'
+Assert ($provision.Contains('Enable-LocalUser Administrator')) 'Clone administrator remains disabled'
+Assert ($provision.Contains('reset_service_password=false')) 'LocalSystem service should not respawn a service-user profile'
 Assert (-not $provision.Contains("Payload 'actions-runner-win-x64.zip'")) 'Runner installation present'
 foreach ($path in @('scripts/build-windows-11-iso.ps1','scripts/windows/uup-helpers.ps1','http/windows-11/provision-first-logon.ps1')) {
     $tokens = $null; $errors = $null
