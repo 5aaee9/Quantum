@@ -13,5 +13,6 @@ guest-status.log
 windows-screens/
 windows-11-*.sock
 windows-11-serial.log
+windows-11-smoke-serial.log
 packer-windows-11.log
 iso/
