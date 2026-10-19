@@ -72,8 +72,15 @@ jobs:
           mkdir -p windows-11-screens
           (
             while true; do
+              {
+                date -u
+                df -h .
+                if [ -S windows-11-monitor.sock ]; then
+                  printf 'info status\ninfo block\n' | socat -t 2 - UNIX-CONNECT:windows-11-monitor.sock || true
+                fi
+              } >> windows-11-host.log 2>&1
               if [ -S windows-11-monitor.sock ]; then
-                printf 'screendump %s/windows-11-screens/latest.ppm\n' "$PWD" | socat -t 2 - UNIX-CONNECT:windows-11-monitor.sock || true
+                printf 'screendump %s/windows-11-screens/latest.ppm\n' "$PWD" | socat -t 2 - UNIX-CONNECT:windows-11-monitor.sock >/dev/null 2>&1 || true
                 if [ -f windows-11-screens/latest.ppm ]; then
                   convert windows-11-screens/latest.ppm windows-11-screens/latest.png || true
                 fi
@@ -102,6 +109,7 @@ jobs:
             packer-windows-11.log
             windows-11-screens/latest.png
             windows-11-smoke-serial.log
+            windows-11-host.log
           retention-days: 7
       - name: Remove local intermediate media
         if: always()
