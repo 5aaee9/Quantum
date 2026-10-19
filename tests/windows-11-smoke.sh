@@ -5,6 +5,7 @@ image=$(realpath "${1:?Usage: $0 image.qcow2}")
 for tool in qemu-system-x86_64 swtpm xorriso ssh sshpass node; do command -v "$tool" >/dev/null; done
 work=$(mktemp -d)
 vm_pid='' tpm_pid=''
+# shellcheck disable=SC2329 # Invoked through the EXIT trap.
 cleanup() {
     for pid in "$vm_pid" "$tpm_pid"; do
         if [[ -n "$pid" ]]; then kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true; fi
@@ -68,4 +69,17 @@ SSHPASS="$SMOKE_PASSWORD" sshpass -e ssh -o ConnectTimeout=10 -o PreferredAuthen
     -o PubkeyAuthentication=no -o UserKnownHostsFile="$work/known_hosts" -p "$port" \
     Administrator@127.0.0.1 hostname | grep -qi '^win11-smoke'
 echo 'PASS: ConfigDrive password authentication'
-ssh "${args[@]}" 'shutdown /s /t 0' || true
+# Do not silently kill a guest that failed to power off: that would hide the
+# same shutdown failure that prevents Packer from producing an artifact.
+ssh "${args[@]}" 'shutdown /s /f /t 10'
+for ((i=0; i<120; i++)); do
+    if ! kill -0 "$vm_pid" 2>/dev/null; then
+        wait "$vm_pid"
+        vm_pid=''
+        echo 'PASS: guest shutdown exited QEMU'
+        exit 0
+    fi
+    sleep 1
+done
+echo 'FAIL: guest accepted shutdown but QEMU did not exit within 120 seconds' >&2
+exit 1

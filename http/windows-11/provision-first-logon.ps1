@@ -246,5 +246,12 @@ Log 'BUILD_SUCCESS'
     Log "BUILD_FAILED: $($_.Exception.Message)"
 } finally {
     Stop-Process -Id $watchdog.Id -Force -ErrorAction SilentlyContinue
-    & shutdown /p /f | Out-Null
+    # Schedule a normal full shutdown, allowing this FirstLogonCommands process
+    # to return before Windows tears down the session. /p requests immediate
+    # power-off; CI has rebooted instead after sealing with that path.
+    Log 'SHUTDOWN_REQUEST: shutdown.exe /s /f /t 10'
+    & "$env:SystemRoot\System32\shutdown.exe" /s /f /t 10
+    $shutdownExit = $LASTEXITCODE
+    Log "SHUTDOWN_EXIT: $shutdownExit"
+    if ($shutdownExit -ne 0) { throw "Shutdown request failed with exit $shutdownExit" }
 }
