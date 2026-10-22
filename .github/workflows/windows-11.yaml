@@ -66,7 +66,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y qemu-system-x86 qemu-utils ovmf swtpm libarchive-tools xorriso socat imagemagick sshpass
-          sudo setfacl -m "u:$(id -un):rw" /dev/kvm
+          sudo chmod a+rw /dev/kvm
       - name: Build qcow2
         run: |
           mkdir -p windows-11-screens
