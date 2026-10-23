@@ -35,7 +35,9 @@ done
 # Install the package set as one transaction so APT can resolve dependencies
 # while keeping the matching image, modules, and headers together. The
 # mainline image is unsigned by design.
-apt-get install --yes "$tmp_dir"/*.deb
+pushd "$tmp_dir" >/dev/null
+apt-get install --yes ./*.deb
+popd >/dev/null
 
 if grep -qE '^GRUB_DEFAULT=' /etc/default/grub; then
   sed -i 's/^GRUB_DEFAULT=.*/GRUB_DEFAULT=0/' /etc/default/grub
