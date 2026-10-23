@@ -1,6 +1,6 @@
 source "qemu" "github-runner" {
-  iso_checksum      = "file:https://releases.ubuntu.com/24.04/SHA256SUMS"
-  iso_url           = "https://releases.ubuntu.com/24.04/ubuntu-24.04.3-live-server-amd64.iso"
+  iso_checksum      = "file:https://releases.ubuntu.com/26.04/SHA256SUMS"
+  iso_url           = "https://releases.ubuntu.com/26.04/ubuntu-26.04-live-server-amd64.iso"
 
   output_directory  = "outputs/github-runner"
   accelerator       = "kvm"

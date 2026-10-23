@@ -2,42 +2,15 @@
 
 set -euxo pipefail
 
-# Install the newest successful Ubuntu mainline daily kernel. Mainline builds
-# are deliberately unsupported and do not receive security updates; this is
-# intended for kernel testing on the GitHub Runner image.
+# Install the latest Ubuntu unstable kernel from the Canonical Kernel Team's
+# development PPA. These packages are unsupported and may be unstable; this
+# image intentionally tracks them for kernel testing on GitHub-hosted runners.
 export DEBIAN_FRONTEND=noninteractive
 
-mainline_url="https://kernel.ubuntu.com/mainline/daily/current/amd64/"
-tmp_dir=$(mktemp -d)
-trap 'rm -rf "$tmp_dir"' EXIT
-
-index=$(curl --fail --location --silent --show-error "$mainline_url")
-mapfile -t kernel_packages < <(
-  printf '%s\n' "$index" \
-    | grep -oE 'href="[^"]+\.deb"' \
-    | cut -d'"' -f2 \
-    | grep -E '^linux-(headers|image-unsigned|modules)-.*_(amd64|all)\.deb$' \
-    | sort -u
-)
-
-if ((${#kernel_packages[@]} != 4)); then
-  echo "Expected four amd64 kernel packages at $mainline_url, found ${#kernel_packages[@]}" >&2
-  printf '%s\n' "${kernel_packages[@]}" >&2
-  exit 1
-fi
-
-for package in "${kernel_packages[@]}"; do
-  curl --fail --location --silent --show-error \
-    --output "$tmp_dir/$(basename "$package")" \
-    "$mainline_url$package"
-done
-
-# Install the package set as one transaction so APT can resolve dependencies
-# while keeping the matching image, modules, and headers together. The
-# mainline image is unsigned by design.
-pushd "$tmp_dir" >/dev/null
-apt-get install --yes ./*.deb
-popd >/dev/null
+apt-get install --yes software-properties-common
+add-apt-repository --yes ppa:canonical-kernel-team/unstable
+apt-get update --yes
+apt-get install --yes linux-unstable
 
 if grep -qE '^GRUB_DEFAULT=' /etc/default/grub; then
   sed -i 's/^GRUB_DEFAULT=.*/GRUB_DEFAULT=0/' /etc/default/grub
