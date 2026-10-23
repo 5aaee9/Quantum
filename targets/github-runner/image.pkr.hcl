@@ -47,6 +47,7 @@ build {
       "./scripts/generic/97-fix-sshd-config.sh",
       "./scripts/debian/98-clean-interfaces.sh",
       "./scripts/debian/98-clear-apt-cache.sh",
+      "./scripts/github-runner/49-setup-unstable-kernel.sh",
       "./scripts/ubuntu/98-clean-default-user.sh",
       "./scripts/generic/99-release-disk-space.sh"
     ]
