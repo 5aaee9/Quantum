@@ -20,8 +20,9 @@ mapfile -t kernel_packages < <(
     | sort -u
 )
 
-if ((${#kernel_packages[@]} == 0)); then
-  echo "No amd64 kernel packages found at $mainline_url" >&2
+if ((${#kernel_packages[@]} != 4)); then
+  echo "Expected four amd64 kernel packages at $mainline_url, found ${#kernel_packages[@]}" >&2
+  printf '%s\n' "${kernel_packages[@]}" >&2
   exit 1
 fi
 
@@ -31,9 +32,10 @@ for package in "${kernel_packages[@]}"; do
     "$mainline_url$package"
 done
 
-# Install the package set as one transaction so the matching image, modules,
-# and headers are all present. The mainline image is unsigned by design.
-dpkg --install "$tmp_dir"/*.deb || apt-get install --fix-broken --yes
+# Install the package set as one transaction so APT can resolve dependencies
+# while keeping the matching image, modules, and headers together. The
+# mainline image is unsigned by design.
+apt-get install --yes "$tmp_dir"/*.deb
 
 if grep -qE '^GRUB_DEFAULT=' /etc/default/grub; then
   sed -i 's/^GRUB_DEFAULT=.*/GRUB_DEFAULT=0/' /etc/default/grub
