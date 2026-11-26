@@ -3,9 +3,10 @@
 set -ex
 
 # Lightweight CI toolchain: the high-frequency subset of the official
-# actions/runner-images toolset. Deliberately excluded for size: Android
-# SDK/NDK, browsers + Selenium, multi-version Java/Go/Rust/.NET, and the
-# AWS/Azure/GCP CLIs - actions like setup-java/setup-go cover those.
+# actions/runner-images toolset (including latest Rust stable via rustup).
+# Deliberately excluded for size: Android SDK/NDK, browsers + Selenium,
+# multi-version Java/Go/.NET, and the AWS/Azure/GCP CLIs - actions like
+# setup-java/setup-go cover those.
 
 export DEBIAN_FRONTEND=noninteractive
 
@@ -51,3 +52,38 @@ curl -fsSL -o /tmp/helm.tar.gz \
 tar -xzf /tmp/helm.tar.gz -C /tmp
 install -m 0755 /tmp/linux-amd64/helm /usr/local/bin/helm
 rm -rf /tmp/helm.tar.gz /tmp/linux-amd64
+
+# --- Rust (latest stable via rustup) -----------------------------------------
+RUNNER_USER=runner
+RUNNER_HOME=$(getent passwd "$RUNNER_USER" | cut -d: -f6)
+RUSTUP_HOME="${RUNNER_HOME}/.rustup"
+CARGO_HOME="${RUNNER_HOME}/.cargo"
+
+sudo -u "$RUNNER_USER" -H env \
+  HOME="$RUNNER_HOME" \
+  RUSTUP_HOME="$RUSTUP_HOME" \
+  CARGO_HOME="$CARGO_HOME" \
+  bash -c 'curl --proto "=https" --tlsv1.2 -fsSL https://sh.rustup.rs | sh -s -- -y --no-modify-path --profile default --default-toolchain stable'
+
+for bin in rustup cargo rustc rustdoc rustfmt cargo-fmt cargo-clippy clippy-driver; do
+  if [ -x "${CARGO_HOME}/bin/${bin}" ]; then
+    ln -sf "${CARGO_HOME}/bin/${bin}" "/usr/local/bin/${bin}"
+  fi
+done
+
+cat > /etc/profile.d/rust.sh <<'EOF'
+if [ -d "${HOME}/.cargo/bin" ]; then
+  case ":${PATH}:" in
+    *":${HOME}/.cargo/bin:"*) ;;
+    *) export PATH="${HOME}/.cargo/bin:${PATH}" ;;
+  esac
+fi
+EOF
+chmod 0644 /etc/profile.d/rust.sh
+
+sudo -u "$RUNNER_USER" -H env \
+  HOME="$RUNNER_HOME" \
+  RUSTUP_HOME="$RUSTUP_HOME" \
+  CARGO_HOME="$CARGO_HOME" \
+  PATH="${CARGO_HOME}/bin:${PATH}" \
+  bash -c 'rustc --version && cargo --version && rustfmt --version && cargo clippy --version'
