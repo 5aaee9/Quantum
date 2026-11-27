@@ -119,7 +119,21 @@ if ($pwsh) { Run 'msiexec' @('/i', $pwsh, '/qn', '/norestart', 'ADD_PATH=1', 'US
 
 Log '=== cloudbase-init ==='
 $cb = Payload 'CloudbaseInitSetup.msi'
-if ($cb) { Run 'msiexec' @('/i', $cb, '/qn', '/norestart') 300 }
+if ($cb) {
+    try {
+        Run 'msiexec' @('/i', $cb, '/qn', '/norestart', '/l*v', 'C:\Windows\Temp\cloudbase-install.log') 900
+    } catch {
+        try {
+            Select-String -Path 'C:\Windows\Temp\cloudbase-install.log' -Pattern '^Action (start|ended) ' |
+                Select-Object -Last 60 -ExpandProperty Line |
+                Set-Content -Encoding ascii 'C:\Windows\Temp\cloudbase-ci.log'
+            & cmd /c 'type C:\Windows\Temp\cloudbase-ci.log > COM1' 2>$null | Out-Null
+        } catch {
+            Log 'Could not read or transfer the Cloudbase-Init install log'
+        }
+        throw
+    }
+}
 $cbHome = 'C:\Program Files\Cloudbase Solutions\Cloudbase-Init'
 if (Test-Path $cbHome) {
     # write cloudbase-init.conf with a hardcoded standard plugin list — the
