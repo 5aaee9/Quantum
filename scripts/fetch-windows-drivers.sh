@@ -5,6 +5,7 @@
 # provision ISO via cd_files).
 #
 # Requires bsdtar (apt: libarchive-tools) or xorriso for extraction.
+# The Windows Server runner also uses jq to select a PowerShell installer.
 #
 # virtio-win.iso layout quirks (stable-virtio, 0.1.302+):
 #   - NetKVM/vioserial live under <dev>/<os>/amd64
@@ -110,6 +111,15 @@ gh_asset() {  # gh_asset <repo> <asset-glob>
         | grep -iE "$2" | head -1
 }
 
+pwsh_msi_url() {
+    # Newer stable releases may ship without an MSI. Find the most recent
+    # stable release that still provides the installer used by first logon.
+    curl -fsSL --retry 3 'https://api.github.com/repos/PowerShell/PowerShell/releases' \
+        | jq -er 'first(.[] | select(.draft == false and .prerelease == false)
+            | .assets[] | select(.name | test("^PowerShell-[0-9.]+-win-x64[.]msi$"))
+            | .browser_download_url)'
+}
+
 fetch drivers/OpenSSH-Win64.zip \
     "https://github.com/PowerShell/Win32-OpenSSH/releases/download/10.0.0.0p2-Preview/OpenSSH-Win64.zip"
 
@@ -117,8 +127,13 @@ if [[ "$variant" == windows-2025-runner ]]; then
 fetch drivers/payloads/Git-64-bit.exe \
     "$(gh_asset git-for-windows/git 'Git-.*-64-bit\.exe')"
 
-fetch drivers/payloads/PowerShell-win-x64.msi \
-    "$(gh_asset PowerShell/PowerShell 'PowerShell-.*-win-x64\.msi')"
+if [ ! -s drivers/payloads/PowerShell-win-x64.msi ]; then
+    pwsh_url=$(pwsh_msi_url) || {
+        echo 'error: could not resolve a PowerShell Windows x64 MSI from recent stable releases' >&2
+        exit 1
+    }
+    fetch drivers/payloads/PowerShell-win-x64.msi "$pwsh_url"
+fi
 fi
 
 fetch drivers/payloads/CloudbaseInitSetup.msi \
