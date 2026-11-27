@@ -214,9 +214,26 @@ Set-Content -Encoding ascii 'C:\Windows\Temp\sysprep-unattend.xml' @'
   </settings>
 </unattend>
 '@
-Run "$env:SystemRoot\System32\Sysprep\sysprep.exe" @('/generalize', '/oobe', '/quit', '/quiet', '/unattend:C:\Windows\Temp\sysprep-unattend.xml') 1200 @(0)
-if (-not (Test-Path "$env:SystemRoot\System32\Sysprep\Sysprep_succeeded.tag")) {
-    throw 'Sysprep exited without its success tag'
+$sysprepDir = "$env:SystemRoot\System32\Sysprep"
+try {
+    Run "$sysprepDir\sysprep.exe" @('/generalize', '/oobe', '/quit', '/quiet', '/unattend:C:\Windows\Temp\sysprep-unattend.xml') 1200 @(0)
+    if (-not (Test-Path "$sysprepDir\Sysprep_succeeded.tag")) {
+        throw 'Sysprep exited without its success tag'
+    }
+} catch {
+    $diagnosticPath = 'C:\Windows\Temp\sysprep-ci.log'
+    try {
+        $state = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Setup\State').ImageState
+        Set-Content -Encoding ascii $diagnosticPath "Sysprep ImageState: $state"
+        foreach ($name in 'setupact.log', 'setuperr.log') {
+            Add-Content $diagnosticPath "=== Sysprep Panther $name ==="
+            Get-Content "$sysprepDir\Panther\$name" -Tail 60 -ErrorAction SilentlyContinue | Add-Content $diagnosticPath
+        }
+        & cmd /c 'type C:\Windows\Temp\sysprep-ci.log > COM1' 2>$null | Out-Null
+    } catch {
+        Log 'Could not read or transfer Sysprep diagnostics'
+    }
+    throw
 }
 New-Item 'C:\provision-done.marker' -ItemType File -Force | Out-Null
 Log 'BUILD_SUCCESS'
