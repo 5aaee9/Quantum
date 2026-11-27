@@ -26,17 +26,30 @@ if ((${#kernel_packages[@]} != 4)); then
   exit 1
 fi
 
+runtime_packages=()
 for package in "${kernel_packages[@]}"; do
   curl --fail --location --silent --show-error \
     --output "$tmp_dir/$(basename "$package")" \
     "$mainline_url$package"
+  case "$package" in
+    linux-image-unsigned-*|linux-modules-*) runtime_packages+=("./$package") ;;
+  esac
 done
 
-# Install the package set as one transaction so APT can resolve dependencies
-# while keeping the matching image, modules, and headers together. The
-# mainline image is unsigned by design.
+if ((${#runtime_packages[@]} != 2)); then
+  echo "Expected a kernel image and modules at $mainline_url" >&2
+  exit 1
+fi
+
+# Daily headers can require libraries from a newer Ubuntu release. The
+# matching image and modules are sufficient to boot the daily kernel.
 pushd "$tmp_dir" >/dev/null
-apt-get install --yes ./*.deb
+if apt-get --simulate install ./*.deb; then
+  apt-get install --yes ./*.deb
+else
+  echo 'Daily kernel headers are unavailable for this Ubuntu release. Installing the image and modules only.' >&2
+  apt-get install --yes "${runtime_packages[@]}"
+fi
 popd >/dev/null
 
 if grep -qE '^GRUB_DEFAULT=' /etc/default/grub; then
