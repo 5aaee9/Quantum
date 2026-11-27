@@ -203,6 +203,17 @@ Remove-Item 'C:\ProgramData\ssh\ssh_host_*' -Force -ErrorAction SilentlyContinue
 netsh advfirewall set allprofiles state on 2>$null | Out-Null
 Remove-Item 'C:\provision' -Recurse -Force -ErrorAction SilentlyContinue
 
+Log '=== remove Desktop App Installer before Sysprep ==='
+$appInstaller = 'Microsoft.DesktopAppInstaller'
+# Remove registrations for existing users and provisioning for future users.
+# AppxSysprep can fail with 0x80073cfa when it tries to remove this package.
+Get-AppxPackage -AllUsers -Name $appInstaller -PackageTypeFilter Bundle |
+    ForEach-Object { Remove-AppxPackage -AllUsers -Package $_.PackageFullName }
+Get-AppxPackage -AllUsers -Name $appInstaller |
+    ForEach-Object { Remove-AppxPackage -AllUsers -Package $_.PackageFullName }
+Get-AppxProvisionedPackage -Online | Where-Object DisplayName -eq $appInstaller |
+    ForEach-Object { Remove-AppxProvisionedPackage -Online -PackageName $_.PackageName | Out-Null }
+
 Log '=== sysprep + shutdown ==='
 Set-Content -Encoding ascii 'C:\Windows\Temp\sysprep-unattend.xml' @'
 <?xml version="1.0" encoding="utf-8"?>
