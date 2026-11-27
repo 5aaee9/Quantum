@@ -18,16 +18,14 @@ $ErrorActionPreference = 'Stop'
 foreach ($tf in 'C:\Windows\Temp\provision.trace','C:\provision.trace') {
     Set-Content $tf "start $(Get-Date -Format HH:mm:ss)" -Force -ErrorAction SilentlyContinue
 }
-# log to disk AND to COM1 — the serial port reaches QEMU's -serial file: so
-# we get a live, host-readable trace of every step. The specialize COM1
-# marker proves `cmd /c "echo X > COM1"` works from Windows under QEMU, so
-# reuse exactly that mechanism (no `mode` — specialize's bare `echo`
-# already wrote through, and `mode COM1` can block on some serial setups).
+# Transfer the log line as file data so cmd never interprets its contents.
 function Log($m) {
-    $line = "$(Get-Date -Format HH:mm:ss) $m"
+    $line = "$(Get-Date -Format HH:mm:ss) $($m -replace '[\r\n]+', ' ')"
     Write-Host $line
-    $escaped = $line -replace '([&|<>()^])', '^$1'
-    try { & cmd /c "echo PROV: $escaped > COM1" 2>$null | Out-Null } catch {}
+    try {
+        Set-Content -Encoding ascii 'C:\Windows\Temp\provision-serial.log' "PROV: $line"
+        & cmd /c 'type C:\Windows\Temp\provision-serial.log > COM1' 2>$null | Out-Null
+    } catch {}
     foreach ($tf in 'C:\Windows\Temp\provision.trace','C:\provision.trace') { Add-Content $tf -Value $line -ErrorAction SilentlyContinue }
 }
 
@@ -199,20 +197,8 @@ if ($ej) { Run $ej @() 60 }
 Log '=== cleanup ==='
 Stop-Service sshd -Force -ErrorAction SilentlyContinue
 Remove-Item 'C:\ProgramData\ssh\ssh_host_*' -Force -ErrorAction SilentlyContinue
-& net.exe user packer /delete 2>$null | Out-Null
 netsh advfirewall set allprofiles state on 2>$null | Out-Null
 Remove-Item 'C:\provision' -Recurse -Force -ErrorAction SilentlyContinue
-
-Log '=== remove Desktop App Installer before Sysprep ==='
-$appInstaller = 'Microsoft.DesktopAppInstaller'
-# Remove registrations for existing users and provisioning for future users.
-# AppxSysprep can fail with 0x80073cfa when it tries to remove this package.
-Get-AppxPackage -AllUsers -Name $appInstaller -PackageTypeFilter Bundle |
-    ForEach-Object { Remove-AppxPackage -AllUsers -Package $_.PackageFullName }
-Get-AppxPackage -AllUsers -Name $appInstaller |
-    ForEach-Object { Remove-AppxPackage -AllUsers -Package $_.PackageFullName }
-Get-AppxProvisionedPackage -Online | Where-Object DisplayName -eq $appInstaller |
-    ForEach-Object { Remove-AppxProvisionedPackage -Online -PackageName $_.PackageName | Out-Null }
 
 Log '=== sysprep + shutdown ==='
 Set-Content -Encoding ascii 'C:\Windows\Temp\sysprep-unattend.xml' @'
@@ -246,6 +232,8 @@ try {
     }
     throw
 }
+# Sysprep needs the current account to resolve its AppX registrations.
+Run 'net.exe' @('user', 'packer', '/delete') 60 @(0)
 New-Item 'C:\provision-done.marker' -ItemType File -Force | Out-Null
 Log 'BUILD_SUCCESS'
 } catch {
